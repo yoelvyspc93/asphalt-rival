@@ -64,7 +64,8 @@ Si `db push` no puede conectar a Postgres, usa la Management API:
 npx supabase db query --linked -f supabase/migrations/20260902151915_lobby_schema.sql
 ```
 
-Alternativa: en el **SQL Editor** ejecuta [`supabase/schema.sql`](supabase/schema.sql).
+También puedes ejecutar [`supabase/schema.sql`](supabase/schema.sql) en el **SQL Editor**.
+
 4. Copia **Project URL** y la clave **anon** (Settings → API).
 5. Local: crea `apps/web/.env`:
 

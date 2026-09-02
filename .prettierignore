@@ -1,2 +1,3 @@
 pnpm-lock.yaml
 *.sql
+supabase/.temp

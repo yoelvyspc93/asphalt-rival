@@ -227,9 +227,7 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
     const supabase = getSupabaseClient();
     if (!supabase || !this.state.roomCode || !this.userId) return;
     this.update({
-      players: this.state.players.map((player) =>
-        player.local ? { ...player, ready } : player,
-      ),
+      players: this.state.players.map((player) => (player.local ? { ...player, ready } : player)),
     });
     void supabase
       .from("room_players")
