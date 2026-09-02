@@ -8,6 +8,7 @@ import {
   type RaceInput,
   type RaceNetworkAdapter,
   type RivalSnapshot,
+  type SimulationFrame,
 } from "./raceNetworkTypes";
 
 type PlayerSchema = {
@@ -26,6 +27,7 @@ type RaceSchema = {
   countdownMs: number;
   elapsedMs: number;
   winnerSessionId: string;
+  seed: number;
   players: {
     get(sessionId: string): PlayerSchema | undefined;
     forEach(callback: (player: PlayerSchema, sessionId: string) => void): void;
@@ -78,6 +80,7 @@ export class ColyseusRaceNetwork implements RaceNetworkAdapter {
   private intentionalLeave = false;
   private readonly stateListeners = new Set<(state: RaceConnectionState) => void>();
   private readonly rivalListeners = new Set<(snapshot: RivalSnapshot) => void>();
+  private readonly simulationListeners = new Set<(frame: SimulationFrame) => void>();
 
   constructor(endpoint = defaultEndpoint()) {
     this.client = new Client(endpoint);
@@ -130,6 +133,13 @@ export class ColyseusRaceNetwork implements RaceNetworkAdapter {
     this.rivalListeners.add(listener);
     return () => {
       this.rivalListeners.delete(listener);
+    };
+  }
+
+  subscribeToSimulation(listener: (frame: SimulationFrame) => void) {
+    this.simulationListeners.add(listener);
+    return () => {
+      this.simulationListeners.delete(listener);
     };
   }
 
@@ -221,9 +231,11 @@ export class ColyseusRaceNetwork implements RaceNetworkAdapter {
     players.sort((a, b) => Number(b.local) - Number(a.local));
 
     const localSessionId = this.room?.sessionId ?? this.state.sessionId;
+    let localRider: PlayerSchema | undefined;
     let rival: PlayerSchema | undefined;
     state.players.forEach((player, sessionId) => {
-      if (sessionId !== localSessionId) rival = player;
+      if (sessionId === localSessionId) localRider = player;
+      else rival = player;
     });
     if (rival) {
       const snapshot = {
@@ -234,6 +246,26 @@ export class ColyseusRaceNetwork implements RaceNetworkAdapter {
       };
       this.rivalListeners.forEach((listener) => listener(snapshot));
     }
+    this.simulationListeners.forEach((listener) =>
+      listener({
+        local: localRider
+          ? {
+              distance: localRider.distance,
+              laneOffset: localRider.lateralPosition,
+              speed: localRider.speed * 3.6,
+            }
+          : null,
+        rival: rival
+          ? {
+              distance: rival.distance,
+              laneOffset: rival.lateralPosition,
+              speed: rival.speed * 3.6,
+            }
+          : null,
+        elapsedMs: state.elapsedMs,
+        seed: state.seed || this.state.seed || 42,
+      }),
+    );
 
     this.update({
       roomCode: state.roomCode || this.room?.roomId || this.state.roomCode,
@@ -242,6 +274,7 @@ export class ColyseusRaceNetwork implements RaceNetworkAdapter {
       countdownMs: state.countdownMs,
       elapsedMs: state.elapsedMs,
       winnerSessionId: state.winnerSessionId,
+      seed: state.seed || this.state.seed,
       players,
     });
   }

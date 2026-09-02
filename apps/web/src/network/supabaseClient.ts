@@ -34,6 +34,11 @@ export function getSupabaseClient(): SupabaseClient | null {
       autoRefreshToken: true,
       detectSessionInUrl: false,
     },
+    realtime: {
+      params: {
+        eventsPerSecond: 40,
+      },
+    },
   });
   return sharedClient;
 }

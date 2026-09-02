@@ -42,6 +42,11 @@ export function createHostPlayer(id: string, slot: number): HostPlayerSim {
   };
 }
 
+export function ensureHostPlayer(state: HostRaceLoopState, id: string, slot: number): void {
+  if (state.players.has(id)) return;
+  state.players.set(id, createHostPlayer(id, slot));
+}
+
 export function createHostRaceLoop(hostId: string, guestId?: string): HostRaceLoopState {
   const players = new Map<string, HostPlayerSim>();
   players.set(hostId, createHostPlayer(hostId, 0));

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { generateTraffic, type TrafficVehicleState } from "@game-moto/simulation";
 import type { RaceNetworkAdapter } from "../network/raceNetwork";
 
 export type RacePhase = "lobby" | "countdown" | "race" | "paused" | "result" | "replay";
@@ -35,13 +36,17 @@ type GameCanvasProps = {
 
 type TrafficVehicle = {
   group: THREE.Group;
-  speed: number;
-  counted: boolean;
-  seed: number;
 };
 
-const lanes = [-4.65, -1.55, 1.55, 4.65];
+const lanes = [-4.65, -1.55, 1.55, 4.65] as const;
+const SAME_STATION_Z = 6.15;
+const VIEW_AHEAD_METERS = 170;
+const VIEW_BEHIND_METERS = 14;
 const events = ["REBUFO ACTIVO", "TRACCIÓN ESTABLE", "VIENTO LATERAL", "NOVA EN RADAR"];
+
+function worldZFromGap(gapAheadMeters: number) {
+  return SAME_STATION_Z - gapAheadMeters;
+}
 
 function mat(color: number, roughness = 0.45, metalness = 0.15, emissive = 0) {
   return new THREE.MeshStandardMaterial({
@@ -636,19 +641,25 @@ export function GameCanvas({
     rivalSpray.position.set(0, 0.1, 1.2);
     rival.add(rivalSpray);
 
-    const traffic: TrafficVehicle[] = Array.from({ length: 12 }, (_, index) => {
+    const TRAFFIC_POOL = 28;
+    let trafficSeed = 42;
+    let trafficField: TrafficVehicleState[] = generateTraffic(trafficSeed);
+    const traffic: TrafficVehicle[] = Array.from({ length: TRAFFIC_POOL }, (_, index) => {
       const group = createTrafficVehicle(index);
-      group.position.set(
-        lanes[(index * 3 + 1) % lanes.length],
-        0,
-        -72 - index * 58 - (index % 3) * 31,
-      );
+      group.visible = false;
       scene.add(group);
       const spray = createSpray(45);
       spray.position.set(0, 0.08, 2.1);
       group.add(spray);
-      return { group, speed: 17 + (index % 5) * 4.2, counted: false, seed: index * 1.71 };
+      return { group };
     });
+
+    const rebuildTraffic = (seed: number) => {
+      const next = seed || 42;
+      if (next === trafficSeed && trafficField.length > 0) return;
+      trafficSeed = next;
+      trafficField = generateTraffic(trafficSeed);
+    };
 
     const rain = createRain(1300);
     scene.add(rain);
@@ -675,6 +686,12 @@ export function GameCanvas({
     let rivalDistance = 0;
     let rivalSpeed = 0;
     let networkRivalLane: number | null = null;
+    let networkLocal: {
+      distance: number;
+      laneOffset: number;
+      speed: number;
+      elapsed: number;
+    } | null = null;
     let playerX = 0;
     let elapsed = 0;
     let replayTime = 0;
@@ -690,12 +707,32 @@ export function GameCanvas({
     let qualityTimer = 0;
     let stableTimer = 0;
     let priorPhase = phaseRef.current;
+    const localHitKeys = new Set<string>();
     const clock = new THREE.Clock();
     let animationFrame = 0;
     const unsubscribeRival = network.subscribeToRival((snapshot) => {
       rivalDistance = snapshot.distance;
       rivalSpeed = snapshot.speed;
       networkRivalLane = snapshot.laneOffset;
+    });
+    const unsubscribeSimulation = network.subscribeToSimulation?.((frame) => {
+      if (frame.seed) rebuildTraffic(frame.seed);
+      if (frame.local) {
+        networkLocal = {
+          distance: frame.local.distance,
+          laneOffset: frame.local.laneOffset,
+          speed: frame.local.speed,
+          elapsed: frame.elapsedMs / 1000,
+        };
+      }
+      if (frame.rival) {
+        rivalDistance = frame.rival.distance;
+        rivalSpeed = frame.rival.speed;
+        networkRivalLane = frame.rival.laneOffset;
+      }
+    });
+    const unsubscribeState = network.subscribeToState?.((state) => {
+      if (state.seed) rebuildTraffic(state.seed);
     });
 
     const applyQuality = () => {
@@ -713,15 +750,6 @@ export function GameCanvas({
     const triggerEvent = (message: string, duration = 1.65) => {
       eventText = message;
       eventTimer = duration;
-    };
-
-    const resetTraffic = (vehicle: TrafficVehicle, index: number, far = true) => {
-      vehicle.group.position.z = far
-        ? -520 - Math.random() * 520 - index * 18
-        : -80 - Math.random() * 320;
-      vehicle.group.position.x = lanes[Math.floor(Math.random() * lanes.length)];
-      vehicle.speed = 16 + Math.random() * 22;
-      vehicle.counted = false;
     };
 
     const onResize = () => {
@@ -754,31 +782,48 @@ export function GameCanvas({
       const throttlePressed = keys.has("KeyW") || keys.has("ArrowUp") || touchRef.current.throttle;
       const brakePressed = keys.has("KeyS") || keys.has("ArrowDown") || touchRef.current.brake;
 
-      if (isRace) {
-        const throttle = throttlePressed ? 1 : 0.42;
-        const drag = 0.000032 * speed * speed + 0.55;
-        const acceleration = throttle * (34 - speed * 0.063) - drag - (brakePressed ? 52 : 0);
-        speed = THREE.MathUtils.clamp(speed + acceleration * dt, 0, 298);
-        playerX = THREE.MathUtils.clamp(playerX + steer * (3.4 + speed * 0.009) * dt, -5.55, 5.55);
-        distance = Math.min(5000, distance + (speed / 3.6) * dt);
-        elapsed += dt;
-        if (network.status === "demo-local") {
-          rivalSpeed = THREE.MathUtils.clamp(
-            212 +
-              Math.sin(elapsed * 0.31) * 28 +
-              Math.sin(elapsed * 0.93) * 12 +
-              (distance > rivalDistance ? 8 : -4),
-            178,
-            284,
-          );
-          rivalDistance = Math.min(5000, rivalDistance + (rivalSpeed / 3.6) * dt);
-        }
+      if (isRace || activePhase === "countdown") {
         network.sendInput({
-          throttle,
+          throttle: throttlePressed ? 1 : 0,
           brake: brakePressed ? 1 : 0,
           steer,
           timestamp: performance.now(),
         });
+      }
+
+      if (isRace) {
+        const throttle = throttlePressed ? 1 : 0.42;
+        const networked = network.status === "conectado";
+
+        if (networked && networkLocal) {
+          const follow = 1 - Math.exp(-dt * 14);
+          speed = THREE.MathUtils.lerp(speed, networkLocal.speed, follow);
+          distance = networkLocal.distance;
+          playerX = THREE.MathUtils.lerp(playerX, networkLocal.laneOffset, follow);
+          elapsed = networkLocal.elapsed;
+        } else if (!networked) {
+          const drag = 0.000032 * speed * speed + 0.55;
+          const acceleration = throttle * (34 - speed * 0.063) - drag - (brakePressed ? 52 : 0);
+          speed = THREE.MathUtils.clamp(speed + acceleration * dt, 0, 298);
+          playerX = THREE.MathUtils.clamp(
+            playerX + steer * (3.4 + speed * 0.009) * dt,
+            -5.55,
+            5.55,
+          );
+          distance = Math.min(5000, distance + (speed / 3.6) * dt);
+          elapsed += dt;
+          if (network.status === "demo-local") {
+            rivalSpeed = THREE.MathUtils.clamp(
+              212 +
+                Math.sin(elapsed * 0.31) * 28 +
+                Math.sin(elapsed * 0.93) * 12 +
+                (distance > rivalDistance ? 8 : -4),
+              178,
+              284,
+            );
+            rivalDistance = Math.min(5000, rivalDistance + (rivalSpeed / 3.6) * dt);
+          }
+        }
       } else if (isLobby) {
         speed = THREE.MathUtils.lerp(speed, 74, dt * 0.8);
         playerX = Math.sin(performance.now() * 0.00022) * 0.8;
@@ -821,32 +866,42 @@ export function GameCanvas({
       }
 
       const rivalGap = distance - rivalDistance;
-      const rivalLane =
-        networkRivalLane ??
-        THREE.MathUtils.clamp(-1.55 + Math.sin(elapsed * 0.55 + 1.1) * 2.7, -4.6, 4.6);
-      rival.position.x = THREE.MathUtils.lerp(rival.position.x, rivalLane, dt * 1.45);
-      rival.position.z = THREE.MathUtils.lerp(
-        rival.position.z,
-        THREE.MathUtils.clamp(-23 - rivalGap * 0.08, -58, -10),
-        dt * 1.6,
-      );
+      const gapAhead = rivalDistance - distance;
+      const rivalLane = networkRivalLane ?? 1.55;
+      rival.position.x = THREE.MathUtils.lerp(rival.position.x, rivalLane, dt * 6.5);
+      rival.position.z = worldZFromGap(gapAhead);
+      rival.visible = gapAhead > -VIEW_BEHIND_METERS && gapAhead < VIEW_AHEAD_METERS;
       rival.rotation.z = Math.sin(elapsed * 0.55 + 1.1) * -0.13;
       rival.position.y = Math.sin(elapsed * 8.5) * 0.018;
 
-      traffic.forEach((vehicle, index) => {
-        if (isPaused) return;
-        vehicle.group.position.z += Math.max(4, worldSpeed - vehicle.speed) * dt;
-        vehicle.group.position.x += Math.sin(elapsed * 0.18 + vehicle.seed) * dt * 0.08;
-        if (vehicle.group.position.z > 28) resetTraffic(vehicle, index);
+      const raceElapsed = isRace || isReplay ? elapsed : 0;
+      const nearbyTraffic: { rel: number; laneIndex: number; id: string }[] = [];
+      for (const car of trafficField) {
+        const rel = car.distance + car.speed * raceElapsed - distance;
+        if (rel <= -VIEW_BEHIND_METERS || rel >= VIEW_AHEAD_METERS) continue;
+        nearbyTraffic.push({ rel, laneIndex: car.laneIndex, id: car.id });
+      }
+      nearbyTraffic.sort(
+        (left, right) =>
+          Math.abs(left.rel) - Math.abs(right.rel) || left.id.localeCompare(right.id),
+      );
 
-        if (
-          isRace &&
-          vehicle.group.position.z > 2.5 &&
-          vehicle.group.position.z < 10 &&
-          !vehicle.counted
-        ) {
+      traffic.forEach((vehicle, index) => {
+        const item = nearbyTraffic[index];
+        if (!item) {
+          vehicle.group.visible = false;
+          return;
+        }
+        vehicle.group.visible = true;
+        vehicle.group.position.x = lanes[item.laneIndex] ?? 0;
+        vehicle.group.position.z = worldZFromGap(item.rel);
+
+        if (!isRace || isPaused || network.status === "conectado") return;
+        const z = vehicle.group.position.z;
+        const hitKey = item.id;
+        if (z > 2.5 && z < 10 && !localHitKeys.has(hitKey)) {
+          localHitKeys.add(hitKey);
           const lateral = Math.abs(vehicle.group.position.x - playerX);
-          vehicle.counted = true;
           if (lateral < 1.38) {
             speed *= 0.53;
             triggerEvent("IMPACTO · RECUPERA CONTROL", 2.1);
@@ -855,6 +910,7 @@ export function GameCanvas({
             triggerEvent("ADELANTAMIENTO AL LÍMITE");
           }
         }
+        if (z < 1 || z > 16) localHitKeys.delete(hitKey);
       });
 
       const rainPositions = rain.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -969,6 +1025,8 @@ export function GameCanvas({
       window.removeEventListener("keydown", enableAudio);
       audio.dispose();
       unsubscribeRival();
+      unsubscribeSimulation?.();
+      unsubscribeState?.();
       scene.traverse((object) => {
         if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
         object.geometry.dispose();

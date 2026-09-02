@@ -1,11 +1,10 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   ARCADE_GUEST_INPUT_INTERVAL_MS,
-  ARCADE_SNAPSHOT_INTERVAL_MS,
   ARCADE_TICK_MS,
-  createHostPlayer,
   createHostRaceLoop,
   createRoomCode,
+  ensureHostPlayer,
   hostSnapshotPlayers,
   queueHostInput,
   raceInputFromControls,
@@ -22,11 +21,12 @@ import {
   type RaceInput,
   type RaceNetworkAdapter,
   type RivalSnapshot,
+  type SimulationFrame,
 } from "./raceNetworkTypes";
 import { getSupabaseClient, isSupabaseConfigured, SUPABASE_CONFIG_ERROR } from "./supabaseClient";
 
 const TICK_MS = ARCADE_TICK_MS;
-const SNAPSHOT_MS = ARCADE_SNAPSHOT_INTERVAL_MS;
+const SNAPSHOT_MS = 50;
 const INPUT_INTERVAL_MS = ARCADE_GUEST_INPUT_INTERVAL_MS;
 const LOBBY_POLL_MS = 1_000;
 
@@ -123,6 +123,7 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
   private intentionalLeave = false;
   private readonly stateListeners = new Set<(state: RaceConnectionState) => void>();
   private readonly rivalListeners = new Set<(snapshot: RivalSnapshot) => void>();
+  private readonly simulationListeners = new Set<(frame: SimulationFrame) => void>();
 
   get status() {
     return this.state.status;
@@ -275,6 +276,13 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
     this.rivalListeners.add(listener);
     return () => {
       this.rivalListeners.delete(listener);
+    };
+  }
+
+  subscribeToSimulation(listener: (frame: SimulationFrame) => void) {
+    this.simulationListeners.add(listener);
+    return () => {
+      this.simulationListeners.delete(listener);
     };
   }
 
@@ -482,6 +490,12 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
 
     if (roomError || playersError || !room || !players) return;
 
+    if (this.isHost && this.hostLoop) {
+      for (const player of players as PlayerRow[]) {
+        ensureHostPlayer(this.hostLoop, player.user_id, player.slot);
+      }
+    }
+
     const lobbyPlayers: LobbyPlayer[] = players.map((player: PlayerRow) => ({
       sessionId: player.user_id,
       displayName: player.display_name,
@@ -496,6 +510,7 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
       countdownMs: room.countdown_ms,
       elapsedMs: room.elapsed_ms,
       winnerSessionId: room.winner_id ?? "",
+      seed: room.seed || this.state.seed,
     });
 
     if (room.phase !== "waiting") return;
@@ -510,10 +525,6 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
 
     if (this.hostLoop) {
       startHostCountdown(this.hostLoop);
-      const guest = players.find((player: PlayerRow) => player.user_id !== userId);
-      if (guest && !this.hostLoop.players.has(guest.user_id)) {
-        this.hostLoop.players.set(guest.user_id, createHostPlayer(guest.user_id, guest.slot));
-      }
     }
   }
 
@@ -523,6 +534,7 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
       countdownMs: row.countdown_ms,
       elapsedMs: row.elapsed_ms,
       winnerSessionId: row.winner_id ?? "",
+      seed: row.seed || this.state.seed,
     });
 
     if (row.phase === "countdown" && this.isHost && this.hostLoop?.phase === "waiting") {
@@ -555,7 +567,7 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
         winnerSessionId: loop.winnerId,
       });
 
-      this.emitRivalFromHostLoop(loop);
+      this.emitSimulationFromLoop(loop);
 
       const now = performance.now();
       if (now - lastSnapshotAt >= SNAPSHOT_MS) {
@@ -607,29 +619,40 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
       elapsedMs: snapshot.elapsedMs,
       winnerSessionId: snapshot.winnerId,
     });
-
-    const rival = snapshot.players.find((player) => player.id !== this.userId);
-    if (!rival) return;
-    this.rivalListeners.forEach((listener) =>
-      listener({
-        distance: rival.distance,
-        laneOffset: rival.lateralPosition,
-        speed: rival.speed * 3.6,
-        timestamp: performance.now(),
-      }),
-    );
+    this.emitSimulationFromPlayers(snapshot.players, snapshot.elapsedMs);
   }
 
-  private emitRivalFromHostLoop(loop: HostRaceLoopState) {
-    const rival = [...loop.players.values()].find((player) => player.id !== this.userId);
+  private emitSimulationFromLoop(loop: HostRaceLoopState) {
+    this.emitSimulationFromPlayers(hostSnapshotPlayers(loop), loop.elapsedMs);
+  }
+
+  private emitSimulationFromPlayers(
+    players: Array<{ id: string; distance: number; lateralPosition: number; speed: number }>,
+    elapsedMs: number,
+  ) {
+    const local = players.find((player) => player.id === this.userId);
+    const rival = players.find((player) => player.id !== this.userId);
+    const frame: SimulationFrame = {
+      local: local ? this.toRiderFrame(local) : null,
+      rival: rival ? this.toRiderFrame(rival) : null,
+      elapsedMs,
+      seed: this.state.seed || 42,
+    };
+    this.simulationListeners.forEach((listener) => listener(frame));
     if (!rival) return;
     const snapshot: RivalSnapshot = {
-      distance: rival.distance,
-      laneOffset: rival.lateralPosition,
-      speed: rival.speed * 3.6,
+      ...frame.rival!,
       timestamp: performance.now(),
     };
     this.rivalListeners.forEach((listener) => listener(snapshot));
+  }
+
+  private toRiderFrame(player: { distance: number; lateralPosition: number; speed: number }) {
+    return {
+      distance: player.distance,
+      laneOffset: player.lateralPosition,
+      speed: player.speed * 3.6,
+    };
   }
 
   private async requestWakeLock() {

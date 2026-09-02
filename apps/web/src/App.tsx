@@ -352,11 +352,11 @@ export function App() {
 
           <div className="race-progress">
             <div className="progress-labels">
-              <span>VÉRTICE</span>
+              <span>{(localPlayer?.displayName || displayName).toUpperCase()}</span>
               <strong>
                 {(telemetry.distance / 1000).toFixed(2)} / {KM_TOTAL.toFixed(1)} KM
               </strong>
-              <span>NOVA</span>
+              <span>{(rivalPlayer?.displayName || "RIVAL").toUpperCase()}</span>
             </div>
             <div className="progress-track">
               <i style={{ width: `${progress}%` }} />

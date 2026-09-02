@@ -7,6 +7,7 @@ import {
   createHostRaceLoop,
   createHostSnapshot,
   createRoomCode,
+  ensureHostPlayer,
   idleInput,
   queueHostInput,
   startHostCountdown,
@@ -108,5 +109,18 @@ describe("host arcade loop", () => {
     });
     expect(code).toHaveLength(6);
     expect(code).toBe("ABCDEF");
+  });
+
+  it("adds a late guest to the host loop so both bikes share one sim", () => {
+    const state = createHostRaceLoop("host");
+    expect(state.players.size).toBe(1);
+    ensureHostPlayer(state, "guest", 1);
+    expect(state.players.size).toBe(2);
+    state.phase = "racing";
+    queueHostInput(state, "host", THROTTLE);
+    queueHostInput(state, "guest", { ...THROTTLE, tick: 2 });
+    stepHostRace(state, ARCADE_TICK_MS);
+    expect(state.players.get("host")?.distance).toBeGreaterThan(0);
+    expect(state.players.get("guest")?.distance).toBeGreaterThan(0);
   });
 });

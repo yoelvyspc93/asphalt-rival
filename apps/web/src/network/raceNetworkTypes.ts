@@ -12,6 +12,19 @@ export type RivalSnapshot = {
   timestamp: number;
 };
 
+export type RiderFrame = {
+  distance: number;
+  laneOffset: number;
+  speed: number;
+};
+
+export type SimulationFrame = {
+  local: RiderFrame | null;
+  rival: RiderFrame | null;
+  elapsedMs: number;
+  seed: number;
+};
+
 export type NetworkStatus = "desconectado" | "conectando" | "conectado" | "demo-local";
 export type OnlineRacePhase = "waiting" | "countdown" | "racing" | "finished";
 
@@ -33,6 +46,7 @@ export type RaceConnectionState = {
   winnerSessionId: string;
   players: LobbyPlayer[];
   error: string;
+  seed: number;
 };
 
 export interface RaceNetworkAdapter {
@@ -43,6 +57,7 @@ export interface RaceNetworkAdapter {
   connect?(roomCode: string): Promise<void>;
   sendInput(input: RaceInput): void;
   subscribeToRival(listener: (snapshot: RivalSnapshot) => void): () => void;
+  subscribeToSimulation?(listener: (frame: SimulationFrame) => void): () => void;
   subscribeToState?(listener: (state: RaceConnectionState) => void): () => void;
   disconnect(): void;
 }
@@ -57,6 +72,7 @@ export const INITIAL_CONNECTION: RaceConnectionState = {
   winnerSessionId: "",
   players: [],
   error: "",
+  seed: 42,
 };
 
 /**
@@ -73,6 +89,10 @@ export class LocalDemoNetwork implements RaceNetworkAdapter {
   sendInput(_input: RaceInput) {}
 
   subscribeToRival(_listener: (snapshot: RivalSnapshot) => void) {
+    return () => undefined;
+  }
+
+  subscribeToSimulation(_listener: (frame: SimulationFrame) => void) {
     return () => undefined;
   }
 
