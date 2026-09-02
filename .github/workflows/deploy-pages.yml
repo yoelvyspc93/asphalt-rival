@@ -48,7 +48,8 @@ jobs:
       - name: Build web application
         env:
           VITE_COLYSEUS_URL: ${{ vars.VITE_COLYSEUS_URL }}
-        run: pnpm --filter @game-moto/web build -- --base=/${{ github.event.repository.name }}/
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: pnpm --filter @game-moto/web build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
