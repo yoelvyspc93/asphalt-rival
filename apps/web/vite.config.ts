@@ -3,7 +3,9 @@ import react from "@vitejs/plugin-react";
 
 function publicBase() {
   if (process.env.VITE_BASE) {
-    return process.env.VITE_BASE.endsWith("/") ? process.env.VITE_BASE : `${process.env.VITE_BASE}/`;
+    return process.env.VITE_BASE.endsWith("/")
+      ? process.env.VITE_BASE
+      : `${process.env.VITE_BASE}/`;
   }
 
   if (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REPOSITORY) {
