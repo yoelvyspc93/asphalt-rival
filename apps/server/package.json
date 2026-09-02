@@ -1,0 +1,21 @@
+{
+  "name": "@game-moto/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsup src/index.ts --format esm --sourcemap --clean --no-external @game-moto/protocol --no-external @game-moto/simulation",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@game-moto/protocol": "workspace:*",
+    "@game-moto/simulation": "workspace:*",
+    "colyseus": "0.18.5"
+  }
+}
+

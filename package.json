@@ -1,0 +1,39 @@
+{
+  "name": "game-moto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Juego de carreras de motos para dos jugadores en Three.js.",
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @game-moto/web --filter @game-moto/server dev",
+    "dev:web": "pnpm --filter @game-moto/web dev",
+    "dev:server": "pnpm --filter @game-moto/server dev",
+    "build": "pnpm -r --if-present build",
+    "build:web": "pnpm --filter @game-moto/web build",
+    "build:server": "pnpm --filter @game-moto/server build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "format:check": "prettier --check .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm format:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.35.0",
+    "@types/node": "22.18.1",
+    "eslint": "9.35.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "16.3.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.5",
+    "tsup": "8.5.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.42.0",
+    "vitest": "3.2.4"
+  }
+}
+
