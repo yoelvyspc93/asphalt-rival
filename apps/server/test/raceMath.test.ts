@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PlayerState, RACE_DISTANCE_METERS } from "@game-moto/protocol";
-import { advancePlayer } from "../src/rooms/raceMath";
+import { advancePlayer } from "@game-moto/simulation";
 
 describe("authoritative race math", () => {
   it("accelerates and keeps the motorcycle inside the road", () => {

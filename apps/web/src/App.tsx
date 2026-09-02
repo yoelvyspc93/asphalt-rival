@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameCanvas, type RacePhase, type Telemetry, type TouchInput } from "./game/GameCanvas";
 import {
-  ColyseusRaceNetwork,
   LocalDemoNetwork,
-  type RaceConnectionState,
+  INITIAL_CONNECTION,
   type RaceNetworkAdapter,
 } from "./network/raceNetwork";
+import { SupabaseRaceNetwork } from "./network/supabaseRaceNetwork";
 
 const INITIAL_TELEMETRY: Telemetry = {
   speed: 0,
@@ -23,18 +23,6 @@ const INITIAL_TELEMETRY: Telemetry = {
 
 const KM_TOTAL = 5;
 
-const INITIAL_CONNECTION: RaceConnectionState = {
-  status: "desconectado",
-  roomCode: "",
-  sessionId: "",
-  phase: "waiting",
-  countdownMs: 0,
-  elapsedMs: 0,
-  winnerSessionId: "",
-  players: [],
-  error: "",
-};
-
 function formatTime(value: number) {
   const minutes = Math.floor(value / 60);
   const seconds = Math.floor(value % 60);
@@ -45,7 +33,7 @@ function formatTime(value: number) {
 }
 
 export function App() {
-  const onlineNetwork = useMemo(() => new ColyseusRaceNetwork(), []);
+  const onlineNetwork = useMemo(() => new SupabaseRaceNetwork(), []);
   const demoNetwork = useMemo(() => new LocalDemoNetwork(), []);
   const [network, setNetwork] = useState<RaceNetworkAdapter>(onlineNetwork);
   const [connection, setConnection] = useState(INITIAL_CONNECTION);
@@ -343,7 +331,7 @@ export function App() {
             )}
             <p className="demo-note">
               {connection.status === "conectado"
-                ? "Servidor autoritativo activo · carrera sincronizada de 5,0 km."
+                ? "El anfitrión simula la carrera. No minimices su pestaña · 5,0 km vía Supabase."
                 : "Crea una sala o introduce un código de seis caracteres para competir online."}
             </p>
           </aside>

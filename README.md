@@ -7,19 +7,25 @@ Juego web de carreras de motos para dos jugadores, construido con Three.js y una
 ```text
 apps/
   web/          Cliente Three.js, interfaz, audio y controles
-  server/       Servidor Colyseus autoritativo y endpoint de salud
+  server/       Servidor Colyseus opcional para desarrollo local
 packages/
   protocol/     Estado sincronizado, mensajes y validación compartida
-  simulation/   Simulación determinista independiente del render
+  simulation/   Simulación determinista (arcade online + tráfico local)
+supabase/
+  migrations/   Lobby Postgres + Realtime (aplicar con el CLI)
+  schema.sql    Copia del esquema para el SQL Editor del dashboard
 ```
 
-El cliente crea una sala `private_race` y comparte su `roomId` como código de invitación. El segundo jugador entra mediante `joinById`. Las salas no aparecen en listados, admiten exactamente dos pilotos, validan todos los mensajes y avanzan con un tick fijo de 60 Hz. El estado se replica a 20 Hz.
+**Producción (GitHub Pages):** quien crea la sala actúa como host en el navegador. El lobby vive en Supabase Postgres; la carrera usa Broadcast (`race:{code}`) con input del invitado a 10 Hz y snapshots del host cada ~180 ms. No hace falta `apps/server` en producción.
+
+**Desarrollo local:** `pnpm dev` sigue levantando Vite + Colyseus para probar el servidor Node autoritativo.
 
 ## Requisitos
 
 - Node.js 22 o superior.
 - pnpm 10.17.1.
 - Navegador moderno con WebGL 2.
+- Proyecto Supabase (plan free) para multijugador online en Pages.
 
 ## Puesta en marcha
 
@@ -31,7 +37,7 @@ pnpm dev
 Servicios locales:
 
 - Web: URL mostrada por Vite, normalmente `http://localhost:5173`.
-- WebSocket/HTTP: `http://localhost:2567`.
+- WebSocket/HTTP (opcional): `http://localhost:2567`.
 - Salud: `GET http://localhost:2567/health`.
 
 Para ejecutarlos por separado:
@@ -41,7 +47,43 @@ pnpm dev:web
 pnpm dev:server
 ```
 
-Variables opcionales del servidor:
+### Supabase (multijugador online)
+
+1. Crea un proyecto en [supabase.com/dashboard](https://supabase.com/dashboard).
+2. **Authentication → Providers → Anonymous sign-in:** actívalo (cada móvil usa `signInAnonymously()`; RLS lo exige).
+3. Enlaza y aplica el esquema (recomendado):
+
+```bash
+npx supabase link --project-ref TU_PROJECT_REF
+npx supabase db push
+```
+
+Si `db push` no puede conectar a Postgres, usa la Management API:
+
+```bash
+npx supabase db query --linked -f supabase/migrations/20260902151915_lobby_schema.sql
+```
+
+Alternativa: en el **SQL Editor** ejecuta [`supabase/schema.sql`](supabase/schema.sql).
+4. Copia **Project URL** y la clave **anon** (Settings → API).
+5. Local: crea `apps/web/.env`:
+
+```env
+VITE_SUPABASE_URL=https://TU_PROYECTO.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+```
+
+6. GitHub Pages: en el repositorio, **Settings → Secrets and variables → Actions → Variables**, define:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+
+La clave `anon` es pública por diseño; la defensa es RLS.
+
+**Plan free pausado:** tras ~7 días sin uso, Supabase pausa el proyecto. Antes de jugar, abre el dashboard y pulsa **Restore project**.
+
+El anfitrión no debe minimizar la pestaña (Safari recorta los timers). El cliente pide Wake Lock de pantalla cuando el navegador lo permite.
+
+Variables opcionales del servidor Colyseus (solo dev local):
 
 | Variable         | Predeterminado | Uso                        |
 | ---------------- | -------------- | -------------------------- |
@@ -52,14 +94,13 @@ Variables opcionales del servidor:
 ## Contrato multijugador
 
 - Versión de protocolo: `1`.
-- Sala: `private_race`.
+- Sala: `private_race` (Colyseus local) o código de 6 caracteres (Supabase).
 - Máximo: dos jugadores.
-- Mensajes cliente: `player:input`, `player:ready`, `connection:ping`.
-- Mensajes servidor: `room:info`, `race:event`, `protocol:error`, `connection:pong`.
-- Un cliente con versión incompatible se desconecta antes de añadirse al estado.
-- Inputs antiguos, excesivamente adelantados o mal formados se descartan.
+- Mensajes cliente (Colyseus): `player:input`, `player:ready`, `connection:ping`.
+- Mensajes servidor (Colyseus): `room:info`, `race:event`, `protocol:error`, `connection:pong`.
+- Online Pages: lobby vía Postgres; carrera vía Broadcast `input` / `state`.
 
-El código compartido vive en `@game-moto/protocol`; no deben duplicarse strings de mensajes ni formas de payload en el cliente.
+El código compartido vive en `@game-moto/protocol` y `@game-moto/simulation`; no dupliques física arcade ni strings de mensajes.
 
 ## Validación
 
@@ -75,9 +116,9 @@ pnpm format:check
 
 ## Producción
 
-El workflow `.github/workflows/deploy-pages.yml` valida todo el monorepo y publica `apps/web/dist` en GitHub Pages al hacer push a `main`. GitHub Pages solo aloja el cliente estático; `apps/server` debe desplegarse en un servicio Node con WebSockets persistentes y TLS. Cree la variable de repositorio `VITE_COLYSEUS_URL` con la URL `wss://` pública del servidor y limite `ALLOWED_ORIGIN` al dominio público.
+El workflow `.github/workflows/deploy-pages.yml` valida todo el monorepo y publica `apps/web/dist` en GitHub Pages al hacer push a `main`. El build inyecta `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` desde variables de repositorio. Sin ellas, el lobby online muestra un error claro y la demo local sigue funcionando.
 
-Para compilar y arrancar el servidor:
+`apps/server` puede desplegarse por separado en un servicio Node con WebSockets (desarrollo o alternativa a Supabase):
 
 ```bash
 pnpm build:server

@@ -47,7 +47,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build web application
         env:
-          VITE_COLYSEUS_URL: ${{ vars.VITE_COLYSEUS_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_BASE: /${{ github.event.repository.name }}/
         run: pnpm --filter @game-moto/web build
       - uses: actions/configure-pages@v6

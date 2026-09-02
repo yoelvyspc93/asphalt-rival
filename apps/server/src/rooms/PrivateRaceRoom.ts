@@ -24,15 +24,10 @@ import {
   type RaceRoomOptions,
   type RoomInfoMessage,
 } from "@game-moto/protocol";
-import { advancePlayer, idleInput } from "./raceMath";
-
-const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+import { advancePlayer, createRoomCode as makeRoomCode, idleInput } from "@game-moto/simulation";
 
 export function createRoomCode(): string {
-  return Array.from(
-    { length: 6 },
-    () => ROOM_CODE_ALPHABET[randomInt(ROOM_CODE_ALPHABET.length)],
-  ).join("");
+  return makeRoomCode((exclusiveMax) => randomInt(exclusiveMax));
 }
 
 const PLAYER_COLORS = ["#ff5a36", "#29c7ff"] as const;
