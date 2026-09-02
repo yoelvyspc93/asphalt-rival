@@ -180,9 +180,9 @@ export function App() {
       <div className="grain" aria-hidden="true" />
 
       <header className="topbar">
-        <div className="wordmark" aria-label="Filo Atlántico">
-          <span className="wordmark-kicker">OPERACIÓN</span>
-          <strong>FILO / ATLÁNTICO</strong>
+        <div className="wordmark" aria-label="Asphalt Rivals">
+          <span className="wordmark-kicker">MOTO DUEL</span>
+          <strong>ASPHALT / RIVALS</strong>
         </div>
         <div className="topbar-status">
           <span className="status-dot" />
@@ -201,7 +201,7 @@ export function App() {
           <div className="lobby-copy">
             <p className="eyebrow">DUELO COSTERO // 5,0 KM</p>
             <h1 id="lobby-title">
-              Domina el <em>filo</em>.
+              Domina el <em>asfalto</em>.
             </h1>
             <p className="lobby-lead">
               Dos motos. Una línea de llegada. El tráfico no se apartará por ti.
