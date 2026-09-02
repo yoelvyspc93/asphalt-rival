@@ -241,12 +241,8 @@ function resolveTrafficCollisions(
         continue;
       }
 
-      const impactSpeed = Math.hypot(
-        player.longitudinalSpeed - traffic.speed,
-        player.lateralSpeed,
-      );
-      const severity =
-        impactSpeed >= HARD_COLLISION_SPEED_METERS_PER_SECOND ? "hard" : "soft";
+      const impactSpeed = Math.hypot(player.longitudinalSpeed - traffic.speed, player.lateralSpeed);
+      const severity = impactSpeed >= HARD_COLLISION_SPEED_METERS_PER_SECOND ? "hard" : "soft";
       events.push({
         type: "collision",
         tick: state.tick,
@@ -383,7 +379,7 @@ function respawnPlayer(
 }
 
 function findSafestRespawnLane(state: SimulationState, player: PlayerState): number {
-  let safestLane = LANE_CENTERS_METERS[0]!;
+  let safestLane: number = LANE_CENTERS_METERS[0];
   let greatestClearance = -1;
 
   for (const lane of LANE_CENTERS_METERS) {
@@ -494,8 +490,7 @@ function sweptBoxesOverlap(
   const xInterval = axisIntersection(relativeStartX, relativeDeltaX, combinedHalfWidth);
   const zInterval = axisIntersection(relativeStartZ, relativeDeltaZ, combinedHalfLength);
   return (
-    Math.max(xInterval.entry, zInterval.entry, 0) <=
-    Math.min(xInterval.exit, zInterval.exit, 1)
+    Math.max(xInterval.entry, zInterval.entry, 0) <= Math.min(xInterval.exit, zInterval.exit, 1)
   );
 }
 

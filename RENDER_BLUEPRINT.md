@@ -17,11 +17,11 @@ La prioridad es que cada fotograma comunique velocidad sin ocultar la carretera.
 
 ## Presupuestos por calidad
 
-| Perfil | Resolución dinámica | Sombras | Post FX | Objetivo |
-| --- | --- | --- | --- | --- |
-| Alto | 0.85–1.0 DPR efectivo | 2048, cascadas | Completo | 60 fps a 1080p en GPU dedicada media |
-| Medio | 0.7–0.9 | 1024, una cascada | Sin GTAO costoso | 60 fps en portátil moderno |
-| Bajo | 0.55–0.8 | Contacto simplificado | AA + LUT | 30–60 fps, estabilidad prioritaria |
+| Perfil | Resolución dinámica   | Sombras               | Post FX          | Objetivo                             |
+| ------ | --------------------- | --------------------- | ---------------- | ------------------------------------ |
+| Alto   | 0.85–1.0 DPR efectivo | 2048, cascadas        | Completo         | 60 fps a 1080p en GPU dedicada media |
+| Medio  | 0.7–0.9               | 1024, una cascada     | Sin GTAO costoso | 60 fps en portátil moderno           |
+| Bajo   | 0.55–0.8              | Contacto simplificado | AA + LUT         | 30–60 fps, estabilidad prioritaria   |
 
 El runtime reduce primero efectos, luego sombras y finalmente resolución. Nunca reduce la frecuencia fija de simulación.
 
@@ -47,4 +47,3 @@ El runtime reduce primero efectos, luego sombras y finalmente resolución. Nunca
 3. A/B con etiquetas aleatorias frente a referencias legales equivalentes; aprobar con puntuación media mínima de 4/5 y cero defectos críticos.
 4. Perf capture sin crecimiento sostenido de memoria, errores WebGL ni stutters de compilación tras el calentamiento.
 5. Contraste y legibilidad del HUD verificados en movimiento, daltonismo simulado y perfiles de calidad alto/bajo.
-

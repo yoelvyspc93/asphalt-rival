@@ -2,8 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
+    "experimentalDecorators": true,
     "types": ["node", "vitest/globals"]
   },
   "include": ["src", "test"]
 }
-

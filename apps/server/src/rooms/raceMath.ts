@@ -28,13 +28,9 @@ export function advancePlayer(
     ROAD_HALF_WIDTH,
   );
   player.lean += (input.steering - player.lean) * Math.min(1, deltaSeconds * 8);
-  player.distance = Math.min(
-    RACE_DISTANCE_METERS,
-    player.distance + player.speed * deltaSeconds,
-  );
+  player.distance = Math.min(RACE_DISTANCE_METERS, player.distance + player.speed * deltaSeconds);
 }
 
 export function idleInput(tick: number): PlayerInputMessage {
   return { tick, throttle: 0, brake: 0, steering: 0, boost: false };
 }
-

@@ -10,4 +10,3 @@ try {
   console.error("No se pudo iniciar el servidor autoritativo.", error);
   process.exitCode = 1;
 }
-

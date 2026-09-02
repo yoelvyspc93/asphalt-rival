@@ -18,4 +18,3 @@ describe("server configuration", () => {
     });
   });
 });
-

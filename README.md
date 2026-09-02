@@ -43,11 +43,11 @@ pnpm dev:server
 
 Variables opcionales del servidor:
 
-| Variable | Predeterminado | Uso |
-| --- | --- | --- |
-| `HOST` | `0.0.0.0` | Interfaz HTTP de escucha |
-| `PORT` | `2567` | Puerto HTTP/WebSocket |
-| `ALLOWED_ORIGIN` | `*` | Origen permitido para HTTP |
+| Variable         | Predeterminado | Uso                        |
+| ---------------- | -------------- | -------------------------- |
+| `HOST`           | `0.0.0.0`      | Interfaz HTTP de escucha   |
+| `PORT`           | `2567`         | Puerto HTTP/WebSocket      |
+| `ALLOWED_ORIGIN` | `*`            | Origen permitido para HTTP |
 
 ## Contrato multijugador
 
@@ -75,7 +75,7 @@ pnpm format:check
 
 ## Producción
 
-El workflow `.github/workflows/deploy-pages.yml` valida todo el monorepo y publica `apps/web/dist` en GitHub Pages al hacer push a `main`. GitHub Pages solo aloja el cliente estático; `apps/server` debe desplegarse en un servicio Node con WebSockets persistentes y TLS. Configure el cliente con la URL `wss://` del servidor y limite `ALLOWED_ORIGIN` al dominio público.
+El workflow `.github/workflows/deploy-pages.yml` valida todo el monorepo y publica `apps/web/dist` en GitHub Pages al hacer push a `main`. GitHub Pages solo aloja el cliente estático; `apps/server` debe desplegarse en un servicio Node con WebSockets persistentes y TLS. Cree la variable de repositorio `VITE_COLYSEUS_URL` con la URL `wss://` pública del servidor y limite `ALLOWED_ORIGIN` al dominio público.
 
 Para compilar y arrancar el servidor:
 

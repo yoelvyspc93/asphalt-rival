@@ -19,4 +19,3 @@ describe("protocol validation", () => {
     expect(sanitizeBikeColor("red", "#ffffff")).toBe("#ffffff");
   });
 });
-

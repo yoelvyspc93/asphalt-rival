@@ -13,4 +13,3 @@ describe("synchronized state", () => {
     expect(state.players.get("session-1")).toBe(player);
   });
 });
-

@@ -46,6 +46,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build web application
+        env:
+          VITE_COLYSEUS_URL: ${{ vars.VITE_COLYSEUS_URL }}
         run: pnpm --filter @game-moto/web build -- --base=/${{ github.event.repository.name }}/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
@@ -53,4 +55,3 @@ jobs:
           path: apps/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4
-

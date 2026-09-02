@@ -19,4 +19,3 @@ export function getServerConfig(environment: NodeJS.ProcessEnv = process.env): S
     allowedOrigin: environment.ALLOWED_ORIGIN?.trim() || "*",
   };
 }
-

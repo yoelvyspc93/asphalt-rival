@@ -17,4 +17,3 @@ export const BIKE_WIDTH_METERS = 0.78;
 export const BIKE_LENGTH_METERS = 2.2;
 
 export const DEFAULT_TRAFFIC_DENSITY_PER_LANE_KM = 14;
-

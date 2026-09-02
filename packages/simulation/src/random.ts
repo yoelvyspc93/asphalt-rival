@@ -34,4 +34,3 @@ export function normalizeSeed(seed: number): number {
   if (!Number.isFinite(seed)) return 0;
   return Math.trunc(seed) >>> 0;
 }
-

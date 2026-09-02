@@ -41,4 +41,3 @@ export class RaceState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type({ map: TrafficState }) traffic = new MapSchema<TrafficState>();
 }
-

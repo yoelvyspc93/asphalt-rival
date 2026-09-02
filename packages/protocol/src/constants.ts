@@ -17,6 +17,5 @@ export const SERVER_MESSAGE = {
 export const MAX_PLAYERS = 2 as const;
 export const SERVER_TICK_RATE = 60 as const;
 export const STATE_PATCH_RATE_MS = 50 as const;
-export const RACE_DISTANCE_METERS = 1_500 as const;
+export const RACE_DISTANCE_METERS = 5_000 as const;
 export const COUNTDOWN_MS = 3_000 as const;
-

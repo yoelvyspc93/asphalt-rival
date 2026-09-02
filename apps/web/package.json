@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc --noEmit -p tsconfig.json --pretty false"
   },
   "dependencies": {
+    "@colyseus/sdk": "0.18.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.179.1"

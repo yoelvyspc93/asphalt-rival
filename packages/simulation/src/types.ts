@@ -113,4 +113,3 @@ export interface SimulationStep {
   state: SimulationState;
   events: SimulationEvent[];
 }
-

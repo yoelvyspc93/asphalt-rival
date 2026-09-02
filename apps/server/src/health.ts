@@ -17,4 +17,3 @@ export function createHealthPayload(now = new Date(), uptime = process.uptime())
     timestamp: now.toISOString(),
   };
 }
-

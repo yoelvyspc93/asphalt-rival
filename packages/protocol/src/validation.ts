@@ -19,7 +19,14 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 export function sanitizeDisplayName(value: unknown): string {
   if (typeof value !== "string") return DEFAULT_NAME;
-  const clean = value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, MAX_NAME_LENGTH);
+  const clean = [...value]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint > 0x1f && codePoint !== 0x7f;
+    })
+    .join("")
+    .trim()
+    .slice(0, MAX_NAME_LENGTH);
   return clean || DEFAULT_NAME;
 }
 
@@ -59,4 +66,3 @@ export function parsePing(value: unknown): PingMessage | null {
     ? { clientTime: value.clientTime }
     : null;
 }
-

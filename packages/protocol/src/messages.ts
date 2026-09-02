@@ -52,4 +52,3 @@ export interface MatchSummary {
   winnerSessionId: string;
   elapsedMs: number;
 }
-

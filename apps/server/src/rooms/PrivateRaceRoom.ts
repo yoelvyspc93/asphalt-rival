@@ -26,16 +26,26 @@ import {
 } from "@game-moto/protocol";
 import { advancePlayer, idleInput } from "./raceMath";
 
+const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+export function createRoomCode(): string {
+  return Array.from(
+    { length: 6 },
+    () => ROOM_CODE_ALPHABET[randomInt(ROOM_CODE_ALPHABET.length)],
+  ).join("");
+}
+
 const PLAYER_COLORS = ["#ff5a36", "#29c7ff"] as const;
 const PLAYER_STARTS = [-1.55, 1.55] as const;
 const MAX_INPUT_LEAD_TICKS = SERVER_TICK_RATE * 2;
 
-export class PrivateRaceRoom extends Room<RaceState> {
-  maxClients = MAX_PLAYERS;
-  state = new RaceState();
-  private readonly inputs = new Map<string, PlayerInputMessage>();
+export class PrivateRaceRoom extends Room<{ state: RaceState }> {
+  override maxClients = MAX_PLAYERS;
+  override state = new RaceState();
+  private readonly pendingInputs = new Map<string, PlayerInputMessage>();
 
-  async onCreate(): Promise<void> {
+  override async onCreate(): Promise<void> {
+    this.roomId = createRoomCode();
     this.state.roomCode = this.roomId;
     this.state.protocolVersion = PROTOCOL_VERSION;
     this.state.seed = randomInt(1, 0xffff_ffff);
@@ -50,7 +60,7 @@ export class PrivateRaceRoom extends Room<RaceState> {
       if (input.tick <= player.lastInputTick || input.tick > this.state.tick + MAX_INPUT_LEAD_TICKS)
         return;
       player.lastInputTick = input.tick;
-      this.inputs.set(client.sessionId, input);
+      this.pendingInputs.set(client.sessionId, input);
     });
 
     this.onMessage(CLIENT_MESSAGE.ready, (client, payload: unknown) => {
@@ -77,10 +87,10 @@ export class PrivateRaceRoom extends Room<RaceState> {
       });
     });
 
-    this.setFixedTimestep((deltaMs) => this.updateRace(deltaMs), SERVER_TICK_RATE);
+    this.setFixedTimestep((context) => this.updateRace(context.dtMs), SERVER_TICK_RATE);
   }
 
-  onJoin(client: Client, rawOptions: RaceRoomOptions): void {
+  override onJoin(client: Client, rawOptions: RaceRoomOptions): void {
     const options = parseRaceRoomOptions(rawOptions);
     if (options.protocolVersion !== PROTOCOL_VERSION) {
       client.send(SERVER_MESSAGE.protocolError, {
@@ -110,7 +120,7 @@ export class PrivateRaceRoom extends Room<RaceState> {
     } satisfies RoomInfoMessage);
   }
 
-  async onDrop(client: Client): Promise<void> {
+  override async onDrop(client: Client): Promise<void> {
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
     player.connected = false;
@@ -123,7 +133,7 @@ export class PrivateRaceRoom extends Room<RaceState> {
     }
   }
 
-  onLeave(client: Client): void {
+  override onLeave(client: Client): void {
     this.removePlayer(client.sessionId);
   }
 
@@ -148,17 +158,22 @@ export class PrivateRaceRoom extends Room<RaceState> {
 
     for (const [sessionId, player] of this.state.players) {
       if (player.finished) continue;
-      advancePlayer(player, this.inputs.get(sessionId) ?? idleInput(this.state.tick), deltaSeconds);
+      advancePlayer(
+        player,
+        this.pendingInputs.get(sessionId) ?? idleInput(this.state.tick),
+        deltaSeconds,
+      );
       if (player.distance >= RACE_DISTANCE_METERS) this.finishRace(player);
     }
   }
 
   private tryStartCountdown(): void {
     if (this.state.players.size !== MAX_PLAYERS) return;
-    if (![...this.state.players.values()].every((player) => player.ready && player.connected)) return;
+    if (![...this.state.players.values()].every((player) => player.ready && player.connected))
+      return;
     this.state.phase = "countdown";
     this.state.countdownMs = COUNTDOWN_MS;
-    this.lock();
+    void this.lock();
     this.broadcast(SERVER_MESSAGE.raceEvent, {
       type: "countdown",
       startsInMs: COUNTDOWN_MS,
@@ -180,7 +195,7 @@ export class PrivateRaceRoom extends Room<RaceState> {
   private removePlayer(sessionId: string): void {
     if (!this.state.players.has(sessionId)) return;
     this.state.players.delete(sessionId);
-    this.inputs.delete(sessionId);
+    this.pendingInputs.delete(sessionId);
     if (this.state.phase === "waiting") return;
     this.broadcast(SERVER_MESSAGE.raceEvent, {
       type: "opponent-disconnected",
@@ -195,4 +210,3 @@ export class PrivateRaceRoom extends Room<RaceState> {
     } satisfies ProtocolErrorMessage);
   }
 }
-

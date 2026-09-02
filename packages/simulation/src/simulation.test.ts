@@ -21,11 +21,7 @@ import {
   type TrafficVehicleState,
 } from "./index";
 
-function trafficAt(
-  distance: number,
-  lateralPosition = 0,
-  speed = 0,
-): TrafficVehicleState {
+function trafficAt(distance: number, lateralPosition = 0, speed = 0): TrafficVehicleState {
   return {
     id: "obstacle",
     kind: "car",
