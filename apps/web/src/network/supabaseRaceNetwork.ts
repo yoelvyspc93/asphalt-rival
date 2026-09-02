@@ -3,6 +3,7 @@ import {
   ARCADE_GUEST_INPUT_INTERVAL_MS,
   ARCADE_TICK_MS,
   createHostRaceLoop,
+  setHostRaceSeed,
   createRoomCode,
   ensureHostPlayer,
   hostSnapshotPlayers,
@@ -143,12 +144,14 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
       this.isHost = true;
 
       let roomCode = "";
+      let roomSeed = 42;
       for (let attempt = 0; attempt < 8; attempt += 1) {
         roomCode = createRoomCode(randomInt);
+        roomSeed = randomInt(0xffff_ffff) + 1;
         const { error } = await supabase.from("rooms").insert({
           code: roomCode,
           host_id: userId,
-          seed: randomInt(0xffff_ffff) + 1,
+          seed: roomSeed,
         });
         if (!error) break;
         if (attempt === 7) throw error;
@@ -164,12 +167,21 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
       });
       if (playerError) throw playerError;
 
+      this.update({
+        status: "conectando",
+        roomCode,
+        sessionId: userId,
+        phase: "waiting",
+        seed: roomSeed,
+        error: "",
+      });
       await this.attachToRoom(supabase, roomCode, userId, true);
       this.update({
         status: "conectado",
         roomCode,
         sessionId: userId,
         phase: "waiting",
+        seed: roomSeed,
         error: "",
       });
     } catch (error) {
@@ -412,7 +424,7 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
     });
 
     if (isHost) {
-      this.hostLoop = createHostRaceLoop(userId);
+      this.hostLoop = createHostRaceLoop(userId, undefined, this.state.seed || 42);
       this.startHostTimers(supabase, roomCode);
       void this.requestWakeLock();
     }
@@ -512,6 +524,8 @@ export class SupabaseRaceNetwork implements RaceNetworkAdapter {
       winnerSessionId: room.winner_id ?? "",
       seed: room.seed || this.state.seed,
     });
+
+    if (this.hostLoop) setHostRaceSeed(this.hostLoop, room.seed || this.state.seed);
 
     if (room.phase !== "waiting") return;
     if (!this.isHost) return;

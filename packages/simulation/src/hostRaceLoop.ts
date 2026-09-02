@@ -3,10 +3,13 @@ import {
   ARCADE_RACE_DISTANCE_METERS,
   ARCADE_PLAYER_STARTS,
   advanceArcadePlayer,
+  applyArcadeTrafficCollisions,
   idleArcadeInput,
   type ArcadeInput,
   type ArcadePlayerState,
 } from "./arcadeRace";
+import { generateTraffic } from "./traffic";
+import type { TrafficVehicleState } from "./types";
 
 export type HostRacePhase = "waiting" | "countdown" | "racing" | "finished";
 
@@ -24,6 +27,9 @@ export interface HostRaceLoopState {
   countdownMs: number;
   elapsedMs: number;
   winnerId: string;
+  seed: number;
+  traffic: TrafficVehicleState[];
+  trafficCooldowns: Map<string, number>;
   players: Map<string, HostPlayerSim>;
   pendingInputs: Map<string, ArcadeInput>;
 }
@@ -39,6 +45,7 @@ export function createHostPlayer(id: string, slot: number): HostPlayerSim {
     finished: false,
     finishTimeMs: 0,
     lastInputTick: 0,
+    hitstunMs: 0,
   };
 }
 
@@ -47,7 +54,7 @@ export function ensureHostPlayer(state: HostRaceLoopState, id: string, slot: num
   state.players.set(id, createHostPlayer(id, slot));
 }
 
-export function createHostRaceLoop(hostId: string, guestId?: string): HostRaceLoopState {
+export function createHostRaceLoop(hostId: string, guestId?: string, seed = 42): HostRaceLoopState {
   const players = new Map<string, HostPlayerSim>();
   players.set(hostId, createHostPlayer(hostId, 0));
   if (guestId) players.set(guestId, createHostPlayer(guestId, 1));
@@ -58,9 +65,20 @@ export function createHostRaceLoop(hostId: string, guestId?: string): HostRaceLo
     countdownMs: 0,
     elapsedMs: 0,
     winnerId: "",
+    seed,
+    traffic: generateTraffic(seed),
+    trafficCooldowns: new Map(),
     players,
     pendingInputs: new Map(),
   };
+}
+
+export function setHostRaceSeed(state: HostRaceLoopState, seed: number): void {
+  const next = seed || 42;
+  if (next === state.seed && state.traffic.length > 0) return;
+  state.seed = next;
+  state.traffic = generateTraffic(next);
+  state.trafficCooldowns.clear();
 }
 
 export function queueHostInput(
@@ -97,10 +115,17 @@ export function stepHostRace(state: HostRaceLoopState, deltaMs: number): void {
 
   for (const [playerId, player] of state.players) {
     if (player.finished) continue;
-    advanceArcadePlayer(
+    player.hitstunMs = Math.max(0, (player.hitstunMs ?? 0) - deltaMs);
+    const queued = state.pendingInputs.get(playerId) ?? idleArcadeInput(state.tick);
+    const input = (player.hitstunMs ?? 0) > 0 ? { ...queued, throttle: 0, boost: false } : queued;
+    advanceArcadePlayer(player, input, deltaSeconds);
+    applyArcadeTrafficCollisions(
       player,
-      state.pendingInputs.get(playerId) ?? idleArcadeInput(state.tick),
-      deltaSeconds,
+      state.traffic,
+      state.elapsedMs / 1_000,
+      state.trafficCooldowns,
+      state.elapsedMs,
+      player.id,
     );
     if (player.distance >= ARCADE_RACE_DISTANCE_METERS) finishHostPlayer(state, player);
   }

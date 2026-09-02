@@ -4,6 +4,7 @@ import {
   ARCADE_RACE_DISTANCE_METERS,
   ARCADE_TICK_MS,
   advancePlayer,
+  applyArcadeTrafficCollisions,
   createHostRaceLoop,
   createHostSnapshot,
   createRoomCode,
@@ -24,9 +25,9 @@ describe("arcade race math", () => {
       lean: 0,
       distance: 0,
     };
-    advancePlayer(player, { tick: 1, throttle: 1, brake: 0, steering: 1, boost: false }, 1);
+    advancePlayer(player, { tick: 1, throttle: 1, brake: 0, steering: 1, boost: false }, 2);
     expect(player.speed).toBeGreaterThan(0);
-    expect(player.lateralPosition).toBe(3.25);
+    expect(player.lateralPosition).toBe(5.55);
     expect(player.distance).toBeGreaterThan(0);
   });
 
@@ -109,6 +110,64 @@ describe("host arcade loop", () => {
     });
     expect(code).toHaveLength(6);
     expect(code).toBe("ABCDEF");
+  });
+
+  it("slows a rider that overlaps a traffic car", () => {
+    const player = {
+      speed: 70,
+      lateralPosition: -1.55,
+      lean: 0,
+      distance: 200,
+    };
+    const car = {
+      id: "traffic-hit",
+      kind: "car" as const,
+      laneIndex: 1,
+      lateralPosition: -1.75,
+      distance: 200,
+      speed: 22,
+      width: 1.85,
+      length: 4.4,
+    };
+    const cooldowns = new Map<string, number>();
+
+    const hit = applyArcadeTrafficCollisions(player, [car], 0, cooldowns, 0, "host");
+
+    expect(hit?.trafficId).toBe("traffic-hit");
+    expect(player.speed).toBeLessThan(10);
+    expect(player.distance).toBeLessThan(200);
+    expect(player.hitstunMs).toBeGreaterThan(0);
+
+    const speedAfterHit = player.speed;
+    const blockedDistance = player.distance;
+    const secondHit = applyArcadeTrafficCollisions(player, [car], 0, cooldowns, 10, "host");
+    expect(secondHit).toBeNull();
+    expect(player.speed).toBeLessThanOrEqual(speedAfterHit);
+    expect(player.distance).toBeLessThanOrEqual(blockedDistance);
+  });
+
+  it("keeps a fast rider from tunneling through a parked car", () => {
+    const player = {
+      speed: 80,
+      lateralPosition: -1.55,
+      lean: 0,
+      distance: 199,
+    };
+    const car = {
+      id: "parked",
+      kind: "car" as const,
+      laneIndex: 1,
+      lateralPosition: -1.75,
+      distance: 200,
+      speed: 0,
+      width: 1.85,
+      length: 4.4,
+    };
+
+    applyArcadeTrafficCollisions(player, [car], 0, new Map(), 0, "host");
+
+    expect(player.distance).toBeLessThanOrEqual(200 - 2.2 - 1.1);
+    expect(player.speed).toBeLessThan(9);
   });
 
   it("adds a late guest to the host loop so both bikes share one sim", () => {

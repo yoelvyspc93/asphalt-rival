@@ -5,9 +5,9 @@ import { advancePlayer } from "@game-moto/simulation";
 describe("authoritative race math", () => {
   it("accelerates and keeps the motorcycle inside the road", () => {
     const player = new PlayerState();
-    advancePlayer(player, { tick: 1, throttle: 1, brake: 0, steering: 1, boost: false }, 1);
+    advancePlayer(player, { tick: 1, throttle: 1, brake: 0, steering: 1, boost: false }, 2);
     expect(player.speed).toBeGreaterThan(0);
-    expect(player.lateralPosition).toBe(3.25);
+    expect(player.lateralPosition).toBe(5.55);
     expect(player.distance).toBeGreaterThan(0);
   });
 
