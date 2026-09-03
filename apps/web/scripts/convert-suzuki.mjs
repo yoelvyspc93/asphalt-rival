@@ -311,10 +311,18 @@ const manifest = {
   paintMaterial: "Car_Paint_-_Red.001",
   parts,
 };
+function formatManifestJson(value) {
+  // Prettier keeps short numeric vectors on one line; match that so CI format:check passes.
+  return `${JSON.stringify(value, null, 2).replaceAll(
+    /\[\n\s+(-?\d[\d.eE+-]*),\n\s+(-?\d[\d.eE+-]*),\n\s+(-?\d[\d.eE+-]*)\n\s+\]/g,
+    "[$1, $2, $3]",
+  )}\n`;
+}
+
 await mkdir(outputDirectory, { recursive: true });
 await writeFile(path.join(outputDirectory, "suzuki-gsx-750.glb"), bytes);
 await writeFile(
   path.join(outputDirectory, "suzuki-gsx-750.manifest.json"),
-  `${JSON.stringify(manifest, null, 2)}\n`,
+  formatManifestJson(manifest),
 );
 console.log(JSON.stringify(manifest, null, 2));
