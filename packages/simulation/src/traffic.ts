@@ -33,12 +33,13 @@ export function generateTraffic(
       // Initial roster: one sedan and one van, with cosmetic colour variants in the renderer.
       const kind: TrafficKind = kindRoll < 0.7 ? "car" : "van";
       const dimensions = TRAFFIC_DIMENSIONS[kind];
+      const lateralPosition = createTrafficLateralPosition(random, laneIndex);
 
       traffic.push({
         id: `traffic-${laneIndex}-${index}`,
         kind,
         laneIndex,
-        lateralPosition: LANE_CENTERS_METERS[laneIndex]!,
+        lateralPosition,
         distance: Math.min(progress, TRACK_LENGTH_METERS - 15),
         speed: random.between(22, kind === "car" ? 38 : 32),
         width: dimensions.width,
@@ -50,4 +51,21 @@ export function generateTraffic(
   return traffic.sort(
     (left, right) => left.distance - right.distance || left.id.localeCompare(right.id),
   );
+}
+
+/**
+ * Adds restrained, deterministic lane drift so the painted centre divider is
+ * not a permanent collision-free racing line. Inner-lane vehicles occasionally
+ * run closer to the divider while always remaining inside their own lane.
+ */
+function createTrafficLateralPosition(random: SeededRandom, laneIndex: number): number {
+  const laneCenter = LANE_CENTERS_METERS[laneIndex]!;
+  const isInnerLane = laneIndex === 1 || laneIndex === 2;
+
+  if (isInnerLane && random.next() < 0.38) {
+    const towardCenter = laneIndex === 1 ? 1 : -1;
+    return laneCenter + towardCenter * random.between(0.42, 0.64);
+  }
+
+  return laneCenter + random.between(-0.16, 0.16);
 }

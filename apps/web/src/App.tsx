@@ -175,14 +175,23 @@ export function App() {
           <strong>ASPHALT / RIVALS</strong>
         </div>
         <div className="topbar-status">
-          <span className="status-dot" />
-          {network.status === "demo-local"
-            ? "DEMO LOCAL"
-            : connection.status === "conectado"
-              ? `EN LÍNEA · ${connection.roomCode}`
-              : connection.status.toUpperCase()}
-          <span className="status-separator" />
-          {telemetry.quality} · {telemetry.fps} FPS
+          {phase === "lobby" ? (
+            <>
+              <span className="status-dot" />
+              {network.status === "demo-local"
+                ? "MODO LOCAL"
+                : connection.status === "conectado"
+                  ? `EN LÍNEA · ${connection.roomCode}`
+                  : connection.status.toUpperCase()}
+              <span className="status-separator" />
+              {telemetry.quality} · {telemetry.fps} FPS
+            </>
+          ) : (
+            <>
+              <span className="status-dot" />
+              COSTA NORTE · SECO
+            </>
+          )}
         </div>
       </header>
 

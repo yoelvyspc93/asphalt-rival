@@ -29,7 +29,7 @@ import type {
 } from "./types";
 
 const ENGINE_ACCELERATION = 19;
-const BRAKE_DECELERATION = 31;
+const BRAKE_DECELERATION = 46;
 const AERODYNAMIC_DRAG = 0.0022;
 const ROLLING_RESISTANCE = 0.18;
 const MAX_LATERAL_ACCELERATION = 18;
@@ -172,7 +172,10 @@ export function cloneSimulationState(state: SimulationState): SimulationState {
 
 function integratePlayer(player: PlayerState, input: RiderInput): void {
   const speedRatio = player.longitudinalSpeed / MAX_SPEED_METERS_PER_SECOND;
-  const engine = input.throttle * ENGINE_ACCELERATION * Math.max(0, 1 - speedRatio ** 1.7);
+  // Braking has priority over throttle. This prevents a held accelerator (or a
+  // stale input packet) from making the motorcycle push against the brakes.
+  const engine =
+    input.brake > 0 ? 0 : input.throttle * ENGINE_ACCELERATION * Math.max(0, 1 - speedRatio ** 1.7);
   const brake = input.brake * BRAKE_DECELERATION;
   const drag =
     player.longitudinalSpeed > 0
@@ -385,7 +388,7 @@ function findSafestRespawnLane(state: SimulationState, player: PlayerState): num
   for (const lane of LANE_CENTERS_METERS) {
     let nearest = Number.POSITIVE_INFINITY;
     for (const traffic of state.traffic) {
-      if (traffic.lateralPosition !== lane) continue;
+      if (Math.abs(traffic.lateralPosition - lane) > 1.2) continue;
       nearest = Math.min(nearest, Math.abs(traffic.distance - player.distance));
     }
     for (const other of state.players) {

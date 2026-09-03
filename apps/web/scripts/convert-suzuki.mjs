@@ -74,6 +74,11 @@ function makeMaterial(definition) {
     material.color.setHex(0x171b20);
     material.roughness = 0.86;
     material.metalness = 0;
+  } else if (name === "Matte__FFCCCCCC__spec_") {
+    // Dedicated 23-triangle mirror glass surface (not the headlight material).
+    material.color.setHex(0x647985);
+    material.roughness = 0.07;
+    material.metalness = 1;
   } else if (name === "renan__spec_") {
     material.color.setHex(0x24282d);
     material.roughness = 0.6;

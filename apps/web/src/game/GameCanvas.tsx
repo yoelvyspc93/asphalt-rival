@@ -11,9 +11,18 @@ import {
 } from "./models/motorcycle";
 import { createTrafficVehicle, animateVehicleWheels } from "./models/roadVehicles";
 import { createOvercastSky, createDryAsphaltMaterial } from "./overcastEnvironment";
+import {
+  createCliffSegment,
+  createCoastalGantry,
+  createCoastalMaterials,
+  createCoastalOcean,
+  updateCoastalOcean,
+  type CoastalMaterials,
+} from "./coastalEnvironment";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import {
   ARCADE_LANE_CENTERS,
+  arcadeTrafficLateralPosition,
   applyArcadeTrafficCollisions,
   generateTraffic,
   type TrafficVehicleState,
@@ -92,49 +101,52 @@ function mesh(
   return object;
 }
 
-function createRoadSegment(index: number, asphalt: THREE.MeshStandardMaterial) {
+function createRoadSegment(
+  index: number,
+  asphalt: THREE.MeshStandardMaterial,
+  coastal: CoastalMaterials,
+) {
   const group = new THREE.Group();
   group.position.z = 35 - index * 72;
 
-  const road = mesh(new THREE.BoxGeometry(15.2, 0.22, 72), asphalt, [0, -0.11, 0], false);
-  group.add(road);
-
-  const shoulder = mat(0x757a7b, 0.92, 0);
-  group.add(mesh(new THREE.BoxGeometry(1.0, 0.25, 72), shoulder, [-8.08, -0.17, 0], false));
-  group.add(mesh(new THREE.BoxGeometry(1.0, 0.25, 72), shoulder, [8.08, -0.17, 0], false));
-  group.add(
-    mesh(new THREE.BoxGeometry(0.72, 1.18, 72), mat(0x657178, 0.58, 0.2), [-8.62, 0.38, 0]),
-  );
-  group.add(mesh(new THREE.BoxGeometry(0.82, 2.5, 72), mat(0x41494b, 0.82, 0.08), [8.66, 1.03, 0]));
-
-  const paint = new THREE.MeshStandardMaterial({
-    color: 0xe0e2d8,
-    roughness: 0.8,
-    metalness: 0,
-  });
+  group.add(mesh(new THREE.BoxGeometry(15.2, 0.22, 72), asphalt, [0, -0.11, 0], false));
+  group.add(mesh(new THREE.BoxGeometry(1.0, 0.25, 72), coastal.shoulder, [-8.08, -0.17, 0], false));
+  group.add(mesh(new THREE.BoxGeometry(1.0, 0.25, 72), coastal.shoulder, [8.08, -0.17, 0], false));
+  group.add(mesh(new THREE.BoxGeometry(0.72, 1.18, 72), coastal.barrier, [-8.62, 0.38, 0]));
+  group.add(mesh(new THREE.BoxGeometry(0.82, 2.5, 72), coastal.retainingWall, [8.66, 1.03, 0]));
   for (const x of [-3.1, 0, 3.1]) {
     for (let z = -30; z <= 30; z += 12) {
-      group.add(mesh(new THREE.BoxGeometry(0.12, 0.003, 5.4), paint, [x, 0.002, z], false));
+      group.add(
+        mesh(new THREE.BoxGeometry(0.12, 0.003, 5.4), coastal.lanePaint, [x, 0.002, z], false),
+      );
     }
   }
+  group.add(
+    mesh(
+      new THREE.BoxGeometry(2.25, 0.006, 4.8),
+      coastal.asphaltRepair,
+      [index % 2 === 0 ? -4.65 : 1.55, 0.004, -17 + (index % 3) * 9],
+      false,
+    ),
+  );
+  group.add(
+    mesh(new THREE.BoxGeometry(15.1, 0.004, 0.055), coastal.asphaltRepair, [0, 0.003, -35], false),
+  );
 
-  const railMat = mat(0x667278, 0.3, 0.72);
   for (const x of [-8.55, 8.55]) {
-    group.add(mesh(new THREE.BoxGeometry(0.16, 0.22, 72), railMat, [x, 0.52, 0], false));
+    group.add(mesh(new THREE.BoxGeometry(0.16, 0.22, 72), coastal.rail, [x, 0.52, 0], false));
     for (let z = -30; z < 34; z += 8) {
-      group.add(mesh(new THREE.BoxGeometry(0.12, 0.84, 0.12), railMat, [x, 0.2, z], false));
+      group.add(mesh(new THREE.BoxGeometry(0.12, 0.84, 0.12), coastal.rail, [x, 0.2, z], false));
     }
   }
 
   if (index % 2 === 0) {
-    const lampMat = mat(0x273239, 0.32, 0.72);
-    const glow = mat(0xffb56b, 0.18, 0.2, 0xff761c);
     for (const x of [-10.2, 10.2]) {
-      group.add(mesh(new THREE.CylinderGeometry(0.08, 0.13, 7, 8), lampMat, [x, 3.4, -8]));
+      group.add(mesh(new THREE.CylinderGeometry(0.08, 0.13, 7, 8), coastal.lamp, [x, 3.4, -8]));
       group.add(
         mesh(
           new THREE.BoxGeometry(1.1, 0.12, 0.32),
-          glow,
+          coastal.lampGlow,
           [x + (x < 0 ? 0.45 : -0.45), 6.82, -8],
           false,
         ),
@@ -142,17 +154,11 @@ function createRoadSegment(index: number, asphalt: THREE.MeshStandardMaterial) {
     }
   }
 
-  if (index % 3 === 0) {
-    const rockMat = mat(0x313b3b, 0.88, 0.04);
-    for (let r = 0; r < 4; r += 1) {
-      const rock = mesh(new THREE.DodecahedronGeometry(2.4 + r * 0.55, 0), rockMat, [
-        14 + r * 4.5,
-        1.2 + r * 0.25,
-        -20 + r * 9,
-      ]);
-      rock.scale.set(1.4, 0.9, 1.8);
-      group.add(rock);
-    }
+  group.add(createCliffSegment(index, coastal));
+  if (index % 5 === 2) {
+    const gantry = createCoastalGantry(coastal);
+    gantry.position.z = -18;
+    group.add(gantry);
   }
 
   return group;
@@ -322,22 +328,22 @@ function GameScene({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.14;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0xb4bec4, 0.0032);
+    scene.fog = new THREE.FogExp2(0x738690, 0.0028);
     const sky = createOvercastSky();
     scene.add(sky);
     // The same cloud dome lights the models; no distorted 2D environment map.
     const environmentScene = new THREE.Scene();
     environmentScene.add(sky.clone());
     const pmrem = new THREE.PMREMGenerator(renderer);
-    const environmentTarget = pmrem.fromScene(environmentScene, 0.15, 0.1, 1000);
+    const environmentTarget = pmrem.fromScene(environmentScene, 0.04, 0.1, 1000);
     scene.environment = environmentTarget.texture;
-    scene.environmentIntensity = 0.7;
+    scene.environmentIntensity = 0.9;
     pmrem.dispose();
     environmentScene.clear();
 
@@ -358,9 +364,9 @@ function GameScene({
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
-    const skylight = new THREE.HemisphereLight(0xd5dde3, 0x5a605d, 2.2);
+    const skylight = new THREE.HemisphereLight(0xc4d3dc, 0x465050, 2);
     scene.add(skylight);
-    const sunLight = new THREE.DirectionalLight(0xe3e7e9, 1.4);
+    const sunLight = new THREE.DirectionalLight(0xdbe7ee, 1.65);
     sunLight.position.set(-34, 48, 15);
     sunLight.castShadow = true;
     sunLight.shadow.radius = 4;
@@ -374,29 +380,19 @@ function GameScene({
     sunLight.shadow.camera.far = 140;
     scene.add(sunLight);
 
-    const fill = new THREE.DirectionalLight(0xd0dce4, 0.55);
+    const fill = new THREE.DirectionalLight(0xc9a08b, 0.35);
     fill.position.set(18, 12, -30);
     scene.add(fill);
 
-    const ambient = new THREE.AmbientLight(0xc1c9cd, 0.2);
+    const ambient = new THREE.AmbientLight(0xb8c2c6, 0.22);
     scene.add(ambient);
-    const water = mesh(
-      new THREE.PlaneGeometry(580, 1250, 1, 1),
-      new THREE.MeshPhysicalMaterial({
-        color: 0x071c28,
-        roughness: 0.16,
-        metalness: 0.38,
-        clearcoat: 0.4,
-      }),
-      [-274, -0.72, -450],
-      false,
-    );
-    water.rotation.x = -Math.PI / 2;
-    scene.add(water);
+    const ocean = createCoastalOcean();
+    scene.add(ocean);
 
     const asphalt = createDryAsphaltMaterial(renderer.capabilities.getMaxAnisotropy());
+    const coastalMaterials = createCoastalMaterials(renderer.capabilities.getMaxAnisotropy());
     const roadSegments = Array.from({ length: 16 }, (_, index) =>
-      createRoadSegment(index, asphalt),
+      createRoadSegment(index, asphalt, coastalMaterials),
     );
     roadSegments.forEach((segment) => scene.add(segment));
 
@@ -416,7 +412,9 @@ function GameScene({
     const rivalMotorcycle = createMotorcycle(0x2467a8, 0x7cbeef, template);
     const playerBike = playerMotorcycle.group;
     const playerRider = playerBike.getObjectByName("rider");
+    const playerHands = playerMotorcycle.firstPersonHands;
     const rival = rivalMotorcycle.group;
+    rivalMotorcycle.firstPersonHands.visible = false;
     playerBike.position.set(0, 0, SAME_STATION_Z);
     rival.position.set(1.55, 0, -28);
     scene.add(playerBike, rival);
@@ -505,6 +503,7 @@ function GameScene({
       hitstunMs: 0,
     };
     const clock = new THREE.Clock();
+    const visualReviewMode = new URLSearchParams(window.location.search).has("visual-review");
     let animationFrame = 0;
     const unsubscribeRival = network.subscribeToRival((snapshot) => {
       rivalDistance = snapshot.distance;
@@ -560,7 +559,7 @@ function GameScene({
     const animate = () => {
       animationFrame = window.requestAnimationFrame(animate);
       const frameDelta = clock.getDelta();
-      const dt = Math.min(frameDelta, 0.05);
+      const dt = Math.min(frameDelta, visualReviewMode ? 0.5 : 0.05);
       const activePhase = phaseRef.current;
       const isRace = activePhase === "race";
       const isReplay = activePhase === "replay";
@@ -569,6 +568,15 @@ function GameScene({
 
       if (activePhase !== priorPhase) {
         if (activePhase === "replay") replayTime = 0;
+        if (
+          activePhase === "race" &&
+          network.status === "demo-local" &&
+          Math.abs(rivalDistance - distance) < 3
+        ) {
+          rivalDistance = distance + 18;
+          rivalSpeed = visualReviewMode ? 220 : 35;
+          if (visualReviewMode) speed = 220;
+        }
         priorPhase = activePhase;
       }
 
@@ -593,7 +601,7 @@ function GameScene({
       }
 
       if (isRace) {
-        const throttle = throttlePressed ? 1 : 0.42;
+        const throttle = brakePressed ? 0 : throttlePressed ? 1 : 0.42;
         const networked = network.status === "conectado";
         const stunned = riderBody.hitstunMs > 0;
         if (stunned) riderBody.hitstunMs = Math.max(0, riderBody.hitstunMs - dt * 1000);
@@ -608,7 +616,9 @@ function GameScene({
         } else if (!networked) {
           const drive = stunned ? 0 : throttle;
           const drag = 0.000032 * speed * speed + 0.55;
-          const acceleration = drive * (34 - speed * 0.063) - drag - (brakePressed ? 52 : 0);
+          // km/h/s. Full braking from 300 km/h now stops in roughly 2.8 s,
+          // and never fights the automatic demo throttle.
+          const acceleration = drive * (34 - speed * 0.063) - drag - (brakePressed ? 105 : 0);
           speed = THREE.MathUtils.clamp(speed + acceleration * dt, 0, 298);
           playerX = THREE.MathUtils.clamp(
             playerX + steer * Math.min(1, speed / 24) * (3.4 + speed * 0.009) * dt,
@@ -619,9 +629,9 @@ function GameScene({
           elapsed += dt;
           if (network.status === "demo-local") {
             const targetSpeed = THREE.MathUtils.clamp(
-              212 + Math.sin(elapsed * 0.31) * 18 + (distance > rivalDistance ? 8 : -4),
-              178,
-              254,
+              speed + 8 + Math.sin(elapsed * 0.31) * 14 + (distance > rivalDistance ? 5 : -3),
+              42,
+              274,
             );
             rivalSpeed = THREE.MathUtils.clamp(
               rivalSpeed + Math.min(targetSpeed - rivalSpeed, 32 - rivalSpeed * 0.06) * dt,
@@ -701,6 +711,7 @@ function GameScene({
 
       const raceElapsed = isLobby || isReplay ? previewElapsed : elapsed;
       const viewDistance = isLobby || isReplay ? previewDistance : distance;
+      updateCoastalOcean(ocean, raceElapsed);
       if (isRace && !isPaused && network.status !== "conectado") {
         riderBody.speed = speed / 3.6;
         riderBody.lateralPosition = playerX;
@@ -766,7 +777,9 @@ function GameScene({
         model.scale.x = car.width / Number(model.userData.baseWidth);
         model.scale.z = car.length / Number(model.userData.baseLength);
         slot.group.visible = true;
-        slot.group.position.set(lanes[car.laneIndex] ?? 0, 0, worldZFromGap(rel));
+        // The renderer uses the exact lateral position used by collision math;
+        // inner-lane drift visibly closes the otherwise permanent centre corridor.
+        slot.group.position.set(arcadeTrafficLateralPosition(car), 0, worldZFromGap(rel));
         animateVehicleWheels(model, isPaused ? 0 : car.speed, dt);
       }
 
@@ -780,6 +793,7 @@ function GameScene({
       // Both views use the same full motorcycle. Hide only the local rider's body
       // so the first-person camera is not occluded by its own helmet/torso.
       if (playerRider) playerRider.visible = isReplay;
+      playerHands.visible = !isReplay;
       animateVehicleWheels(playerBike, worldSpeed, dt);
 
       if (isReplay) {

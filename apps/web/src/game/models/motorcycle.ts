@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { createMotorcycleRider } from "./roadVehicles";
 import { drawGauge } from "./cockpit";
+import { createFirstPersonHands, createSuzukiRider } from "./suzukiRider";
 
 export const MOTORCYCLE_ASSET_URL = "/models/suzuki-gsx-750.glb";
 export const MOTORCYCLE_PAINT = "Car_Paint_-_Red.001";
@@ -62,13 +62,8 @@ function createSuzukiInstrument() {
 /** One imported Suzuki design for both players, with isolated paint and wheel transforms. */
 export function createMotorcycle(color: number, accent: number, template: THREE.Group) {
   const group = template.clone(true);
-  const geometries = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
-  // glTF primitives share attribute buffers. Preserve that sharing inside each bike;
-  // geometry.clone() per primitive would duplicate the entire fairing dozens of times.
-  const attributes = new Map<
-    THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
-    THREE.BufferAttribute | THREE.InterleavedBufferAttribute
-  >();
+  // Mesh geometry is immutable and intentionally shared by both bike instances.
+  // Wheel animation lives on their cloned parent transforms; only paint is cloned.
   const materials = new Map<THREE.Material, THREE.Material>();
   const textures = new Map<THREE.Texture, THREE.Texture>();
   const cloneMaterial = (source: THREE.Material) => {
@@ -87,32 +82,20 @@ export function createMotorcycle(color: number, accent: number, template: THREE.
     if (material.name === MOTORCYCLE_PAINT && material instanceof THREE.MeshStandardMaterial) {
       material.color.setHex(color);
     }
+    if (
+      material.name === "Matte__FFCCCCCC__spec_" &&
+      material instanceof THREE.MeshStandardMaterial
+    ) {
+      material.color.setHex(0x647985);
+      material.roughness = 0.07;
+      material.metalness = 1;
+    }
     materials.set(source, material);
     return material;
   };
   group.traverse((part) => {
     if (!(part instanceof THREE.Mesh)) return;
-    const sourceGeometry = part.geometry as THREE.BufferGeometry;
-    let geometry = geometries.get(sourceGeometry);
-    if (!geometry) {
-      geometry = new THREE.BufferGeometry();
-      geometry.name = sourceGeometry.name;
-      geometry.setIndex(sourceGeometry.index?.clone() ?? null);
-      for (const [name, attribute] of Object.entries(sourceGeometry.attributes)) {
-        let copy = attributes.get(attribute);
-        if (!copy) {
-          copy = attribute.clone();
-          attributes.set(attribute, copy);
-        }
-        geometry.setAttribute(name, copy);
-      }
-      for (const item of sourceGeometry.groups) geometry.addGroup(item.start, item.count, item.materialIndex);
-      geometry.setDrawRange(sourceGeometry.drawRange.start, sourceGeometry.drawRange.count);
-      geometry.boundingBox = sourceGeometry.boundingBox?.clone() ?? null;
-      geometry.boundingSphere = sourceGeometry.boundingSphere?.clone() ?? null;
-      geometries.set(sourceGeometry, geometry);
-    }
-    part.geometry = geometry;
+    part.userData.importedSuzukiPart = true;
     part.material = Array.isArray(part.material)
       ? part.material.map(cloneMaterial)
       : cloneMaterial(part.material);
@@ -120,13 +103,13 @@ export function createMotorcycle(color: number, accent: number, template: THREE.
     part.receiveShadow = true;
     if ([part.material].flat().some((material) => material.transparent)) part.castShadow = false;
   });
-  const rider = createMotorcycleRider(color, accent);
-  rider.position.y = -0.085;
-  group.add(rider);
+  const rider = createSuzukiRider(color, accent);
+  const firstPersonHands = createFirstPersonHands(color, accent);
+  group.add(rider, firstPersonHands);
   const instrument = createSuzukiInstrument();
   group.add(instrument.group);
   group.name = "suzuki-gsx-750";
   group.userData.modelId = "SUZUKI-GSX-750";
   group.userData.paintColor = color;
-  return { group, canvas: instrument.canvas, texture: instrument.texture };
+  return { group, canvas: instrument.canvas, texture: instrument.texture, firstPersonHands };
 }

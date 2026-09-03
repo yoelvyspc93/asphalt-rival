@@ -1,4 +1,10 @@
-import { BIKE_LENGTH_METERS, BIKE_WIDTH_METERS, TICK_RATE, TRACK_LENGTH_METERS } from "./constants";
+import {
+  BIKE_LENGTH_METERS,
+  BIKE_WIDTH_METERS,
+  LANE_CENTERS_METERS,
+  TICK_RATE,
+  TRACK_LENGTH_METERS,
+} from "./constants";
 import type { TrafficVehicleState } from "./types";
 
 /** Same alphabet as the local Colyseus room ids (no I, O, 0, 1). */
@@ -20,7 +26,7 @@ const MAX_SPEED = 82;
 const BOOST_SPEED = 92;
 const ACCELERATION = 24;
 const BOOST_ACCELERATION = 8;
-const BRAKING = 34;
+const BRAKING = 52;
 const DRAG = 0.34;
 const STEERING_SPEED = 5.2;
 const TRAFFIC_HIT_SPEED_CAP = 8;
@@ -67,7 +73,10 @@ export function raceInputFromControls(
 
 export function advancePlayer(player: ArcadeBody, input: ArcadeInput, deltaSeconds: number): void {
   const maxSpeed = input.boost ? BOOST_SPEED : MAX_SPEED;
-  const drive = input.throttle * ACCELERATION + (input.boost ? BOOST_ACCELERATION : 0);
+  // Brake pressure always cuts propulsion, including boost. The same rule is
+  // used by the authoritative fixed-step simulation.
+  const drive =
+    input.brake > 0 ? 0 : input.throttle * ACCELERATION + (input.boost ? BOOST_ACCELERATION : 0);
   const resistance = input.brake * BRAKING + player.speed * DRAG;
 
   player.speed = clamp(player.speed + (drive - resistance) * deltaSeconds, 0, maxSpeed);
@@ -93,6 +102,13 @@ export function arcadeLaneCenter(laneIndex: number) {
   return ARCADE_LANE_CENTERS[laneIndex] ?? 0;
 }
 
+/** Projects canonical traffic lane drift into the narrower arcade road. */
+export function arcadeTrafficLateralPosition(car: TrafficVehicleState): number {
+  const canonicalCenter = LANE_CENTERS_METERS[car.laneIndex];
+  if (canonicalCenter === undefined) return car.lateralPosition;
+  return arcadeLaneCenter(car.laneIndex) + (car.lateralPosition - canonicalCenter);
+}
+
 function trafficCarDistance(car: TrafficVehicleState, elapsedSeconds: number) {
   return car.distance + car.speed * elapsedSeconds;
 }
@@ -103,7 +119,7 @@ export function arcadeTrafficOverlaps(
   elapsedSeconds: number,
 ) {
   const carDistance = trafficCarDistance(car, elapsedSeconds);
-  const laneX = arcadeLaneCenter(car.laneIndex);
+  const laneX = arcadeTrafficLateralPosition(car);
   const halfWidth = BIKE_WIDTH_METERS / 2 + car.width / 2 + LATERAL_FORGIVENESS;
   const halfLength = BIKE_LENGTH_METERS / 2 + car.length / 2 + LONGITUDINAL_FORGIVENESS;
   return (
@@ -134,7 +150,7 @@ export function applyArcadeTrafficCollisions(
       Math.max(3.2, Math.min(car.speed * 0.28, TRAFFIC_HIT_SPEED_CAP)),
     );
 
-    const laneX = arcadeLaneCenter(car.laneIndex);
+    const laneX = arcadeTrafficLateralPosition(car);
     const push = player.lateralPosition <= laneX ? -1 : 1;
     player.lateralPosition = clamp(
       player.lateralPosition + push * 0.28,

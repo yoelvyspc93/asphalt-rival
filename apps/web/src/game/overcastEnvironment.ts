@@ -6,10 +6,11 @@ export function createOvercastSky() {
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      zenith: { value: new THREE.Color(0x76848e) },
-      horizon: { value: new THREE.Color(0xbdc6cb) },
-      cloudLight: { value: new THREE.Color(0xb4bdc4) },
-      cloudShade: { value: new THREE.Color(0x667680) },
+      zenith: { value: new THREE.Color(0x263b4d) },
+      horizon: { value: new THREE.Color(0x82939d) },
+      cloudLight: { value: new THREE.Color(0x7e909d) },
+      cloudShade: { value: new THREE.Color(0x263844) },
+      sunset: { value: new THREE.Color(0xd69072) },
     },
     vertexShader: `
       varying vec3 direction;
@@ -23,6 +24,7 @@ export function createOvercastSky() {
       uniform vec3 horizon;
       uniform vec3 cloudLight;
       uniform vec3 cloudShade;
+      uniform vec3 sunset;
       varying vec3 direction;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -54,6 +56,12 @@ export function createOvercastSky() {
         vec3 base = mix(horizon, zenith, pow(height, 0.45));
         vec3 clouds = mix(cloudLight, cloudShade, density);
         vec3 color = mix(base, clouds, smoothstep(0.015, 0.3, height) * 0.88);
+        float sunsetDirection = pow(
+          max(0.0, dot(ray, normalize(vec3(-0.82, 0.04, -0.3)))),
+          10.0
+        );
+        float sunsetBand = pow(1.0 - height, 12.0) * sunsetDirection;
+        color = mix(color, sunset, sunsetBand * 0.55);
         gl_FragColor = vec4(color, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

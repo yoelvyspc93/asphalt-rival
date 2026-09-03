@@ -7,31 +7,63 @@ const { chromium } = require("playwright");
 const output = path.resolve(process.argv[2] ?? "artifacts/suzuki-review");
 const origin = process.env.REVIEW_ORIGIN ?? "http://localhost:5173";
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({
+  channel: "chrome",
+  headless: true,
+  // Keep the reproducible review independent from another program's GPU use.
+  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+});
 const errors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(30000);
+  // Five review frames per second leave time for UI timers when SwiftShader is
+  // used on a machine whose dedicated GPU is busy with another application.
+  await page.addInitScript(() => {
+    window.requestAnimationFrame = (callback) =>
+      window.setTimeout(() => callback(performance.now()), 200);
+    window.cancelAnimationFrame = (handle) => window.clearTimeout(handle);
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(origin, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "JUGAR DEMO LOCAL" }).waitFor();
-  await page.waitForFunction(() => !document.querySelector(".model-loading"));
-  await page.getByRole("button", { name: "JUGAR DEMO LOCAL" }).click();
+  await page.getByRole("button", { name: "JUGAR DEMO LOCAL" }).waitFor({ state: "attached" });
+  await page.waitForFunction(() => !document.querySelector(".model-loading"), null, {
+    timeout: 60000,
+  });
+  await page.getByRole("button", { name: "JUGAR DEMO LOCAL" }).click({
+    force: true,
+    noWaitAfter: true,
+  });
   await page.waitForSelector(".phase-race");
   await page.keyboard.down("ArrowUp");
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(4000);
+  await page.keyboard.up("ArrowUp");
+  const speedBeforeBrake = Number(await page.locator(".speed strong").innerText());
+  await page.keyboard.down("ArrowDown");
+  await page.waitForTimeout(1200);
+  await page.keyboard.up("ArrowDown");
+  const speedAfterBrake = Number(await page.locator(".speed strong").innerText());
+  if (speedBeforeBrake < 5 || speedAfterBrake > speedBeforeBrake * 0.2) {
+    throw new Error(`Brake validation failed: ${speedBeforeBrake} -> ${speedAfterBrake} km/h`);
+  }
+  console.log(`Brake validation: ${speedBeforeBrake} -> ${speedAfterBrake} km/h in 1.2 s.`);
+  await page.keyboard.down("ArrowUp");
+  await page.waitForTimeout(6000);
   await page.keyboard.up("ArrowUp");
   await page.screenshot({ path: path.join(output, "suzuki-gameplay.png") });
-  console.log("Game loaded and local demo started.");
 
-  await page.route("**/__model-review", (route) => route.fulfill({
-    contentType: "text/html",
-    body: '<html><body style="margin:0;background:#b4bec4"></body></html>',
-  }));
+  await page.route("**/__model-review", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<html><body style="margin:0;background:#b4bec4"></body></html>',
+    }),
+  );
   await page.goto(origin + "/__model-review");
   const stats = await page.evaluate(async () => {
     const THREE = await import("/node_modules/.vite/deps/three.js");
-    const { loadMotorcycleTemplate, createMotorcycle } = await import("/src/game/models/motorcycle.ts");
+    const { loadMotorcycleTemplate, createMotorcycle } = await import(
+      "/src/game/models/motorcycle.ts"
+    );
     const { createOvercastSky } = await import("/src/game/overcastEnvironment.ts");
     const source = await loadMotorcycleTemplate();
     const scene = new THREE.Scene();
@@ -57,7 +89,10 @@ try {
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.normalBias = 0.012;
     scene.add(key);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: 0x747c7e, roughness: 0.96}));
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.MeshStandardMaterial({ color: 0x747c7e, roughness: 0.96 }),
+    );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.004;
     floor.receiveShadow = true;
@@ -66,6 +101,8 @@ try {
     const blue = createMotorcycle(0x2467a8, 0x7cbeef, source).group;
     red.getObjectByName("rider").visible = false;
     blue.getObjectByName("rider").visible = false;
+    red.getObjectByName("first-person-hands").visible = false;
+    blue.getObjectByName("first-person-hands").visible = false;
     red.position.x = -0.8;
     blue.position.x = 0.8;
     scene.add(red, blue);
@@ -81,13 +118,16 @@ try {
     const { renderer, scene, camera, red, blue } = window.reviewSuzuki;
     blue.visible = false;
     red.position.x = 0;
+    red.getObjectByName("rider").visible = true;
     camera.position.set(3.6, 1.3, 0.2);
-    camera.lookAt(0, 0.68, 0);
+    camera.lookAt(0, 0.82, 0);
     renderer.render(scene, camera);
   });
   await page.screenshot({ path: path.join(output, "suzuki-side.png") });
   await page.evaluate(() => {
-    const { renderer, scene, camera } = window.reviewSuzuki;
+    const { renderer, scene, camera, red } = window.reviewSuzuki;
+    red.getObjectByName("rider").visible = false;
+    red.getObjectByName("first-person-hands").visible = true;
     camera.fov = 72;
     camera.updateProjectionMatrix();
     camera.position.set(0, 1.38, 0.43);
@@ -99,18 +139,30 @@ try {
   // A fresh context proves that an unavailable model has a visible, recoverable error.
   const errorPage = await browser.newPage({ viewport: { width: 1000, height: 750 } });
   errorPage.setDefaultTimeout(30000);
-  errorPage.on("console", (message) => { if (message.type() === "error") console.log("LOAD TEST", message.text()); });
-  await errorPage.route("**/models/suzuki-gsx-750.glb", (route) => route.fulfill({ status: 503, body: "Test unavailable" }));
+  errorPage.on("console", (message) => {
+    if (message.type() === "error") console.log("LOAD TEST", message.text());
+  });
+  await errorPage.route("**/models/suzuki-gsx-750.glb", (route) =>
+    route.fulfill({ status: 503, body: "Test unavailable" }),
+  );
   await errorPage.goto(origin);
   await errorPage.getByRole("heading", { name: "No se pudo cargar la Suzuki" }).waitFor();
   await errorPage.screenshot({ path: path.join(output, "suzuki-load-error.png") });
   await errorPage.unroute("**/models/suzuki-gsx-750.glb");
   await errorPage.getByRole("button", { name: "REINTENTAR" }).click();
-  await errorPage.waitForFunction(() => !document.querySelector(".model-loading"), null, { timeout: 20000 }).catch(async (error) => {
-    console.log("Retry state:", await errorPage.locator("body").innerText());
-    throw error;
-  });
-  console.log(JSON.stringify({ ...stats, pageErrors: errors, loadFailureAndRetry: "passed", output }, null, 2));
+  await errorPage
+    .waitForFunction(() => !document.querySelector(".model-loading"), null, { timeout: 20000 })
+    .catch(async (error) => {
+      console.log("Retry state:", await errorPage.locator("body").innerText());
+      throw error;
+    });
+  console.log(
+    JSON.stringify(
+      { ...stats, pageErrors: errors, loadFailureAndRetry: "passed", output },
+      null,
+      2,
+    ),
+  );
   if (errors.length) process.exitCode = 1;
 } finally {
   await browser.close();

@@ -4,7 +4,7 @@ Juego web de carreras de motos para dos jugadores, construido con Three.js y una
 
 ## Escena inicial
 
-- Una sola moto 3D AR-01 compartida por ambos jugadores: roja para el jugador local y azul para el rival. Geometría, cockpit y dimensiones idénticas.
+- Una sola Suzuki GSX 750 3D compartida por ambos jugadores: roja para el jugador local y azul para el rival. Geometría, cockpit y dimensiones idénticas.
 - Dos tipos de tráfico: sedán y furgoneta, con seis colores. La identidad de cada vehículo se mantiene mientras permanece visible.
 - Cielo cubierto procedural y asfalto seco: sin lluvia, salpicaduras, charcos ni vehículos fotográficos.
 - Los instrumentos usan una textura de pantalla dentro de un modelo tridimensional; la cámara local está situada en la misma moto que aparece en la vista exterior.

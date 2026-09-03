@@ -5,6 +5,7 @@ import {
   ARCADE_TICK_MS,
   advancePlayer,
   arcadeTrafficOverlaps,
+  arcadeTrafficLateralPosition,
   applyArcadeTrafficCollisions,
   createHostRaceLoop,
   createHostSnapshot,
@@ -24,7 +25,7 @@ describe("arcade race math", () => {
       id: "contact",
       kind: "car" as const,
       laneIndex: 1,
-      lateralPosition: -1.55,
+      lateralPosition: -1.75,
       distance: 200,
       speed: 0,
       width: 1.85,
@@ -48,6 +49,38 @@ describe("arcade race math", () => {
     expect(player.speed).toBeGreaterThan(0);
     expect(player.lateralPosition).toBe(5.55);
     expect(player.distance).toBeGreaterThan(0);
+  });
+
+  it("applies strong brakes and ignores throttle while braking", () => {
+    const withThrottle = { speed: 300 / 3.6, lateralPosition: 0, lean: 0, distance: 0 };
+    const withoutThrottle = { ...withThrottle };
+    const brakeWithThrottle = { tick: 1, throttle: 1, brake: 1, steering: 0, boost: true };
+    const brakeOnly = { ...brakeWithThrottle, throttle: 0, boost: false };
+
+    for (let tick = 0; tick < 90; tick += 1) {
+      advancePlayer(withThrottle, brakeWithThrottle, 1 / 60);
+      advancePlayer(withoutThrottle, brakeOnly, 1 / 60);
+    }
+
+    expect(withThrottle.speed).toBe(0);
+    expect(withThrottle.distance).toBeLessThan(60);
+    expect(withThrottle).toEqual(withoutThrottle);
+  });
+
+  it("projects deterministic lane drift into collision coordinates", () => {
+    const car = {
+      id: "divider-closer",
+      kind: "car" as const,
+      laneIndex: 1,
+      lateralPosition: -1.2,
+      distance: 200,
+      speed: 0,
+      width: 1.85,
+      length: 4.4,
+    };
+
+    expect(arcadeTrafficLateralPosition(car)).toBeCloseTo(-1, 12);
+    expect(arcadeTrafficOverlaps({ distance: 200, lateralPosition: 0 }, car, 0)).toBe(true);
   });
 
   it("never advances beyond the finish distance", () => {

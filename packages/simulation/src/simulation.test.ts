@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BIKE_WIDTH_METERS,
+  DEFAULT_TRAFFIC_DENSITY_PER_LANE_KM,
   FIXED_TIME_STEP_SECONDS,
   HARD_COLLISION_SPEED_METERS_PER_SECOND,
   MAX_SPEED_METERS_PER_SECOND,
@@ -94,11 +95,25 @@ describe("seeded traffic", () => {
 
   it("generates bounded stable vehicles and supports an empty field", () => {
     const traffic = generateTraffic(8);
-    expect(traffic).toHaveLength(4 * 5 * 14);
+    expect(DEFAULT_TRAFFIC_DENSITY_PER_LANE_KM).toBe(12);
+    expect(traffic).toHaveLength(4 * 5 * 12);
     expect(new Set(traffic.map((vehicle) => vehicle.id)).size).toBe(traffic.length);
     expect(traffic.every((vehicle) => vehicle.distance >= 120)).toBe(true);
     expect(traffic.every((vehicle) => vehicle.distance < TRACK_LENGTH_METERS)).toBe(true);
     expect(generateTraffic(8, 0)).toEqual([]);
+  });
+
+  it("occasionally closes the centre divider without leaving an inner lane", () => {
+    const traffic = generateTraffic(8);
+    const innerTraffic = traffic.filter(
+      (vehicle) => vehicle.laneIndex === 1 || vehicle.laneIndex === 2,
+    );
+    const dividerClosers = innerTraffic.filter(
+      (vehicle) => Math.abs(vehicle.lateralPosition) < vehicle.width / 2 + BIKE_WIDTH_METERS / 2,
+    );
+
+    expect(dividerClosers.length).toBeGreaterThan(0);
+    expect(innerTraffic.every((vehicle) => Math.abs(vehicle.lateralPosition) >= 1.11)).toBe(true);
   });
 
   it("moves traffic exactly once per fixed tick", () => {
@@ -125,6 +140,25 @@ describe("arcade motorcycle integration", () => {
     expect(state.players[0]!.longitudinalSpeed).toBe(0);
   });
 
+  it("cuts propulsion under braking and stops from 300 km/h within 70 metres", () => {
+    const withThrottle = emptyRace();
+    const withoutThrottle = emptyRace();
+    for (const state of [withThrottle, withoutThrottle]) {
+      state.players[0]!.longitudinalSpeed = 300 / 3.6;
+    }
+
+    let stopTicks = 0;
+    while (withThrottle.players[0]!.longitudinalSpeed > 0 && stopTicks < 3 * TICK_RATE) {
+      stepSimulation(withThrottle, { "rider-a": { throttle: 1, brake: 1, steer: 0 } });
+      stepSimulation(withoutThrottle, { "rider-a": { throttle: 0, brake: 1, steer: 0 } });
+      stopTicks += 1;
+    }
+
+    expect(withThrottle.players[0]!.longitudinalSpeed).toBe(0);
+    expect(withThrottle.players[0]!.distance).toBeLessThan(70);
+    expect(stopTicks / TICK_RATE).toBeLessThan(1.8);
+    expect(withThrottle.players[0]!.distance).toBeCloseTo(withoutThrottle.players[0]!.distance, 12);
+  });
   it("steers progressively, recentres and remains within the road", () => {
     const state = emptyRace();
     const rider = state.players[0]!;
@@ -168,6 +202,23 @@ describe("arcade motorcycle integration", () => {
 });
 
 describe("continuous collisions", () => {
+  it("does not make the centre divider a safe route through generated traffic", () => {
+    const state = createSimulationState(["rider-a"], 8);
+    const rider = state.players[0]!;
+    rider.lateralPosition = 0;
+    rider.longitudinalSpeed = MAX_SPEED_METERS_PER_SECOND;
+    let hit: CollisionEvent | undefined;
+
+    for (let tick = 0; tick < 15 * TICK_RATE && !hit; tick += 1) {
+      hit = collisionEvent(
+        stepSimulation(state, { "rider-a": { throttle: 1, brake: 0, steer: 0 } }).events,
+      );
+    }
+
+    expect(hit).toMatchObject({ targetType: "traffic" });
+    expect(rider.distance).toBeLessThan(1_300);
+  });
+
   it("applies a soft response below 12 m/s without knocking the rider down", () => {
     const state = emptyRace();
     const rider = state.players[0]!;

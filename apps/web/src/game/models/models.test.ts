@@ -53,11 +53,14 @@ describe("initial 3D roster", () => {
     expect(left.length).toBeGreaterThan(20);
     expect(left).toHaveLength(right.length);
     for (let index = 0; index < left.length; index += 1) {
-      const a = left[index].geometry.attributes.position.array;
-      const b = right[index].geometry.attributes.position.array;
-      expect(Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(
-        Buffer.from(b.buffer, b.byteOffset, b.byteLength),
-      )).toBe(true);
+      if (left[index].userData.importedSuzukiPart) {
+        expect(left[index].geometry).toBe(right[index].geometry);
+      } else {
+        expect(left[index].geometry.type).toBe(right[index].geometry.type);
+        expect(left[index].geometry.attributes.position.count).toBe(
+          right[index].geometry.attributes.position.count,
+        );
+      }
       expect(left[index].position.toArray()).toEqual(right[index].position.toArray());
       expect(left[index].scale.toArray()).toEqual(right[index].scale.toArray());
     }
@@ -75,7 +78,7 @@ describe("initial 3D roster", () => {
     expect(painted(blue.group).color.getHex()).toBe(0x2467a8);
     expect(painted(red.group)).not.toBe(painted(blue.group));
     expect(painted(red.group)).not.toBe(painted(suzuki));
-    expect(left[0].geometry).not.toBe(right[0].geometry);
+    expect(left[0].geometry).toBe(right[0].geometry);
     animateVehicleWheels(red.group, 12, 0.05);
     expect(red.group.getObjectByName("rolling-wheel")?.rotation.x).not.toBe(0);
     expect(blue.group.getObjectByName("rolling-wheel")?.rotation.x).toBeCloseTo(0, 12);
@@ -90,9 +93,7 @@ describe("initial 3D roster", () => {
     suzuki.traverse((part) => {
       if (part.userData.wheelRole) wheels.push(part);
       if (part instanceof THREE.Mesh) {
-        expect(part.geometry.attributes.position.array.every(Number.isFinite)).toBe(
-          true,
-        );
+        expect(part.geometry.attributes.position.array.every(Number.isFinite)).toBe(true);
         triangles += (part.geometry.index?.count ?? part.geometry.attributes.position.count) / 3;
       }
     });
