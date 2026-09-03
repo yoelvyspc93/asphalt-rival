@@ -2,6 +2,15 @@
 
 Juego web de carreras de motos para dos jugadores, construido con Three.js y una simulación autoritativa. La experiencia está diseñada en español y utiliza una identidad visual original inspirada en el motociclismo arcade de alta velocidad, sin reutilizar assets ni marcas de otros juegos.
 
+## Escena inicial
+
+- Una sola moto 3D AR-01 compartida por ambos jugadores: roja para el jugador local y azul para el rival. Geometría, cockpit y dimensiones idénticas.
+- Dos tipos de tráfico: sedán y furgoneta, con seis colores. La identidad de cada vehículo se mantiene mientras permanece visible.
+- Cielo cubierto procedural y asfalto seco: sin lluvia, salpicaduras, charcos ni vehículos fotográficos.
+- Los instrumentos usan una textura de pantalla dentro de un modelo tridimensional; la cámara local está situada en la misma moto que aparece en la vista exterior.
+
+La comprobación visual en movimiento sigue pendiente; los tests geométricos no certifican calidad AAA. Consultar `design-qa.md`.
+
 ## Arquitectura
 
 ```text

@@ -4,6 +4,7 @@ import {
   ARCADE_RACE_DISTANCE_METERS,
   ARCADE_TICK_MS,
   advancePlayer,
+  arcadeTrafficOverlaps,
   applyArcadeTrafficCollisions,
   createHostRaceLoop,
   createHostSnapshot,
@@ -18,6 +19,24 @@ import {
 const THROTTLE = { tick: 1, throttle: 1, brake: 0, steering: 0, boost: false };
 
 describe("arcade race math", () => {
+  it("does not collide with traffic metres before visible contact", () => {
+    const car = {
+      id: "contact",
+      kind: "car" as const,
+      laneIndex: 1,
+      lateralPosition: -1.55,
+      distance: 200,
+      speed: 0,
+      width: 1.85,
+      length: 4.4,
+    };
+    expect(arcadeTrafficOverlaps({ distance: 194, lateralPosition: -1.55 }, car, 0)).toBe(false);
+    expect(arcadeTrafficOverlaps({ distance: 196.5, lateralPosition: -1.55 }, car, 0)).toBe(false);
+    expect(arcadeTrafficOverlaps({ distance: 196.8, lateralPosition: -1.55 }, car, 0)).toBe(true);
+    expect(arcadeTrafficOverlaps({ distance: 200, lateralPosition: -0.1 }, car, 0)).toBe(false);
+    expect(arcadeTrafficOverlaps({ distance: 200, lateralPosition: -0.3 }, car, 0)).toBe(true);
+  });
+
   it("accelerates and keeps the motorcycle inside the road", () => {
     const player = {
       speed: 0,
@@ -118,6 +137,7 @@ describe("host arcade loop", () => {
       lateralPosition: -1.55,
       lean: 0,
       distance: 200,
+      hitstunMs: 0,
     };
     const car = {
       id: "traffic-hit",

@@ -41,6 +41,7 @@ export function App() {
   const [roomCode, setRoomCode] = useState("");
   const [phase, setPhase] = useState<RacePhase>("lobby");
   const [raceId, setRaceId] = useState(0);
+  const [assetsReady, setAssetsReady] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [touch, setTouch] = useState<TouchInput>({ throttle: false, brake: false, steer: 0 });
@@ -101,7 +102,7 @@ export function App() {
   }, [connection.countdownMs, connection.phase, phase]);
 
   useEffect(() => {
-    if (phase !== "countdown" || network.status !== "demo-local") return;
+    if (phase !== "countdown" || network.status !== "demo-local" || !assetsReady) return;
     const id = window.setInterval(() => {
       setCountdown((current) => {
         if (current <= 1) {
@@ -113,7 +114,7 @@ export function App() {
       });
     }, 850);
     return () => window.clearInterval(id);
-  }, [network, phase, raceId]);
+  }, [network, phase, raceId, assetsReady]);
 
   useEffect(() => {
     if (
@@ -162,6 +163,7 @@ export function App() {
         soundEnabled={soundEnabled}
         network={network}
         onTelemetry={setTelemetry}
+        onAssetsReady={setAssetsReady}
       />
 
       <div className="cinematic-bars" aria-hidden="true" />
@@ -202,11 +204,11 @@ export function App() {
               </div>
               <div>
                 <span>CONDICIÓN</span>
-                <strong>ASFALTO MOJADO</strong>
+                <strong>ASFALTO SECO</strong>
               </div>
               <div>
                 <span>HORA</span>
-                <strong>19:42 / OCASO</strong>
+                <strong>14:30 / NUBLADO</strong>
               </div>
             </div>
 
@@ -244,7 +246,9 @@ export function App() {
                   className="secondary-action"
                   type="button"
                   onClick={joinOnlineRoom}
-                  disabled={connection.status === "conectando" || roomCode.length !== 6}
+                  disabled={
+                    !assetsReady || connection.status === "conectando" || roomCode.length !== 6
+                  }
                 >
                   UNIRME
                 </button>
@@ -255,6 +259,7 @@ export function App() {
                     className="primary-action"
                     type="button"
                     onClick={() => onlineNetwork.setReady(!localPlayer?.ready)}
+                    disabled={!assetsReady}
                   >
                     <span>{localPlayer?.ready ? "CANCELAR LISTO" : "ESTOY LISTO"}</span>
                     <small>
@@ -268,7 +273,7 @@ export function App() {
                     className="primary-action"
                     type="button"
                     onClick={createOnlineRoom}
-                    disabled={connection.status === "conectando"}
+                    disabled={!assetsReady || connection.status === "conectando"}
                   >
                     <span>
                       {connection.status === "conectando" ? "CONECTANDO…" : "CREAR SALA PRIVADA"}
@@ -276,7 +281,12 @@ export function App() {
                     <small>COMPARTE EL CÓDIGO CON TU RIVAL</small>
                   </button>
                 )}
-                <button className="text-action" type="button" onClick={startDemo}>
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={startDemo}
+                  disabled={!assetsReady}
+                >
                   JUGAR DEMO LOCAL
                 </button>
               </div>
@@ -313,7 +323,7 @@ export function App() {
                 <div>
                   <small>{player.local ? "TÚ" : "RIVAL ONLINE"}</small>
                   <strong>{player.displayName.toUpperCase()}</strong>
-                  <span>{player.local ? "AX-9 / CIAN" : "R-12 / CORAL"}</span>
+                  <span>{player.local ? "GSX 750 / ROJA" : "GSX 750 / AZUL"}</span>
                 </div>
                 <i>{!player.connected ? "RECONECTANDO" : player.ready ? "LISTO" : "EN ESPERA"}</i>
               </article>
@@ -342,8 +352,8 @@ export function App() {
         <section className="race-hud" aria-label="Información de carrera">
           <div className="hud-left">
             <div className="weather-chip">
-              <span>LLUVIA</span>
-              <strong>TRACCIÓN 82%</strong>
+              <span>NUBLADO</span>
+              <strong>SIN LLUVIA · SECO</strong>
             </div>
             <div className="event-feed" key={telemetry.event}>
               {telemetry.event}

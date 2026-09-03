@@ -45,8 +45,7 @@ button {
   height: 100%;
   min-height: 560px;
   isolation: isolate;
-  background:
-    radial-gradient(circle at 32% 42%, rgba(34, 215, 237, 0.08), transparent 30%), #061015;
+  background: #111b20;
 }
 
 .game-canvas,
@@ -62,12 +61,46 @@ button {
   z-index: -3;
 }
 
+.model-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 65%, #263139, #10171c 65%);
+}
+
+.model-loading-label {
+  color: var(--coral);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+
+.model-loading h2 {
+  font: 600 clamp(28px, 4vw, 48px) var(--display);
+  margin: 20px 0 0;
+}
+
+.model-loading p {
+  color: #b9c3c9;
+  max-width: 420px;
+  line-height: 1.6;
+}
+
+.model-loading button {
+  margin-top: 20px;
+}
+
 .grain {
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.14;
+  opacity: 0.055;
   mix-blend-mode: overlay;
   background-image:
     repeating-radial-gradient(
@@ -88,10 +121,10 @@ button {
   z-index: -2;
   pointer-events: none;
   box-shadow:
-    inset 0 10vh 15vh rgba(2, 7, 9, 0.56),
-    inset 0 -18vh 19vh rgba(2, 7, 9, 0.72),
-    inset 16vw 0 22vw rgba(2, 7, 9, 0.28),
-    inset -16vw 0 22vw rgba(2, 7, 9, 0.26);
+    inset 0 8vh 13vh rgba(2, 7, 9, 0.2),
+    inset 0 -13vh 18vh rgba(2, 7, 9, 0.28),
+    inset 10vw 0 17vw rgba(2, 7, 9, 0.1),
+    inset -10vw 0 17vw rgba(2, 7, 9, 0.12);
 }
 
 .topbar {
@@ -552,7 +585,7 @@ button {
 
 .hud-left {
   position: absolute;
-  top: 104px;
+  top: 32px;
   left: clamp(22px, 4vw, 68px);
   max-width: 330px;
 }
@@ -599,7 +632,7 @@ button {
 
 .race-progress {
   position: absolute;
-  top: 100px;
+  top: 30px;
   left: 50%;
   width: min(560px, 42vw);
   transform: translateX(-50%);
@@ -672,7 +705,7 @@ button {
 
 .hud-right {
   position: absolute;
-  top: 104px;
+  top: 32px;
   right: clamp(22px, 4vw, 68px);
   display: grid;
   justify-items: end;
@@ -694,17 +727,20 @@ button {
 
 .speed-cluster {
   position: absolute;
-  right: clamp(28px, 5vw, 82px);
-  bottom: clamp(42px, 7vh, 82px);
+  right: clamp(18px, 3vw, 46px);
+  bottom: clamp(22px, 3vh, 38px);
   display: grid;
   grid-template-columns: 70px auto;
   grid-template-rows: auto auto auto;
   align-items: end;
   column-gap: 15px;
-  min-width: 300px;
+  min-width: 214px;
   padding: 18px 0 0 18px;
   border-left: 1px solid rgba(165, 231, 235, 0.25);
   background: linear-gradient(90deg, rgba(7, 17, 22, 0.4), transparent);
+  opacity: 0.76;
+  transform: scale(0.74);
+  transform-origin: right bottom;
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.8);
 }
 
@@ -725,7 +761,7 @@ button {
 
 .gear strong {
   color: var(--cyan-soft);
-  font-size: 68px;
+  font-size: 52px;
   line-height: 0.9;
 }
 
@@ -738,7 +774,7 @@ button {
 }
 
 .speed strong {
-  font-size: clamp(72px, 8vw, 118px);
+  font-size: clamp(52px, 5vw, 76px);
   line-height: 0.72;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.055em;
@@ -1017,6 +1053,14 @@ button {
 .phase-replay .settings-dock {
   right: auto;
   left: clamp(22px, 4vw, 68px);
+}
+
+.phase-race .wordmark,
+.phase-countdown .wordmark,
+.phase-replay .wordmark {
+  opacity: 0.28;
+  transform: scale(0.82);
+  transform-origin: left top;
 }
 
 .settings-dock button {

@@ -1,5 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { drawGauge } from "./models/cockpit";
+import {
+  createMotorcycle,
+  getLoadedMotorcycleTemplate,
+  loadMotorcycleTemplate,
+} from "./models/motorcycle";
+import { createTrafficVehicle, animateVehicleWheels } from "./models/roadVehicles";
+import { createOvercastSky, createDryAsphaltMaterial } from "./overcastEnvironment";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import {
   ARCADE_LANE_CENTERS,
   applyArcadeTrafficCollisions,
@@ -37,13 +49,17 @@ type GameCanvasProps = {
   soundEnabled: boolean;
   network: RaceNetworkAdapter;
   onTelemetry: (telemetry: Telemetry) => void;
+  onAssetsReady: (ready: boolean) => void;
 };
 
 type TrafficVehicle = {
   group: THREE.Group;
+  trafficId: string | null;
+  models: Map<TrafficVehicleState["kind"], THREE.Group>;
 };
 
 const lanes = ARCADE_LANE_CENTERS;
+
 const SAME_STATION_Z = 6.15;
 const VIEW_AHEAD_METERS = 170;
 const VIEW_BEHIND_METERS = 14;
@@ -76,290 +92,29 @@ function mesh(
   return object;
 }
 
-function createSky() {
-  const geometry = new THREE.SphereGeometry(850, 32, 20);
-  const material = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    uniforms: {
-      topColor: { value: new THREE.Color(0x07131d) },
-      horizonColor: { value: new THREE.Color(0xb04d42) },
-      lowColor: { value: new THREE.Color(0x17212a) },
-      offset: { value: 26 },
-      exponent: { value: 0.72 },
-    },
-    vertexShader: `
-      varying vec3 vWorldPosition;
-      void main() {
-        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPosition.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 topColor;
-      uniform vec3 horizonColor;
-      uniform vec3 lowColor;
-      uniform float offset;
-      uniform float exponent;
-      varying vec3 vWorldPosition;
-      void main() {
-        float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
-        float upper = pow(max(h, 0.0), exponent);
-        vec3 dusk = mix(horizonColor, topColor, upper);
-        vec3 color = mix(lowColor, dusk, smoothstep(-0.16, 0.12, h));
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
-  });
-  return new THREE.Mesh(geometry, material);
-}
-
-function createSun() {
-  const material = new THREE.MeshBasicMaterial({ color: 0xff8d62, fog: false });
-  const sun = mesh(new THREE.CircleGeometry(19, 48), material, [-150, 42, -410], false);
-  return sun;
-}
-
-function createGaugeTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return { canvas, texture };
-}
-
-function drawGauge(canvas: HTMLCanvasElement, speed: number, rpm: number) {
-  const context = canvas.getContext("2d");
-  if (!context) return;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#071116";
-  context.beginPath();
-  context.arc(256, 256, 235, 0, Math.PI * 2);
-  context.fill();
-  context.strokeStyle = "#29404a";
-  context.lineWidth = 12;
-  context.stroke();
-  context.strokeStyle = "#25d8ef";
-  context.lineCap = "round";
-  context.lineWidth = 15;
-  context.beginPath();
-  context.arc(256, 256, 205, Math.PI * 0.78, Math.PI * (0.78 + Math.min(1.5, rpm / 7300)), false);
-  context.stroke();
-  context.textAlign = "center";
-  context.fillStyle = "#eaf7f8";
-  context.font = "700 130px Bahnschrift, sans-serif";
-  context.fillText(Math.round(speed).toString(), 256, 285);
-  context.fillStyle = "#7f9aa2";
-  context.font = "600 32px Bahnschrift, sans-serif";
-  context.fillText("KM/H", 256, 340);
-  context.fillStyle = "#ff715e";
-  context.fillRect(205, 378, Math.min(102, rpm / 90), 8);
-}
-
-function createCockpit() {
-  const group = new THREE.Group();
-  group.name = "cockpit";
-  group.position.set(0, -0.8, -1.15);
-
-  const carbon = mat(0x080d0f, 0.28, 0.78);
-  const metal = mat(0x2f3d42, 0.24, 0.88);
-  const cyan = mat(0x14cce5, 0.24, 0.66, 0x07343b);
-  const glove = mat(0x10161a, 0.55, 0.12);
-
-  const fairing = mesh(new THREE.BoxGeometry(1.45, 0.38, 1.65), carbon, [0, -0.2, -0.7]);
-  fairing.rotation.x = -0.11;
-  group.add(fairing);
-
-  const tank = mesh(new THREE.SphereGeometry(0.66, 28, 18), cyan, [0, -0.36, 0.15]);
-  tank.scale.set(1, 0.7, 1.35);
-  group.add(tank);
-
-  const windshieldMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x8bd9e3,
-    transparent: true,
-    opacity: 0.13,
-    roughness: 0.05,
-    metalness: 0,
-    transmission: 0.3,
-    depthWrite: false,
-  });
-  const windshield = mesh(
-    new THREE.CircleGeometry(0.9, 32, 0, Math.PI),
-    windshieldMaterial,
-    [0, 0.33, -1.2],
-    false,
-  );
-  windshield.scale.set(1.25, 0.75, 1);
-  windshield.rotation.z = Math.PI;
-  group.add(windshield);
-
-  const bar = mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.7, 10), metal, [0, 0.1, -0.28]);
-  bar.rotation.z = Math.PI / 2;
-  group.add(bar);
-
-  for (const side of [-1, 1]) {
-    const grip = mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.44, 12), carbon, [
-      side * 1.0,
-      0.11,
-      -0.28,
-    ]);
-    grip.rotation.z = Math.PI / 2;
-    group.add(grip);
-
-    const arm = mesh(new THREE.CapsuleGeometry(0.13, 0.7, 5, 10), glove, [
-      side * 0.72,
-      -0.44,
-      0.25,
-    ]);
-    arm.rotation.z = side * -0.55;
-    arm.rotation.x = -0.42;
-    group.add(arm);
-
-    const hand = mesh(new THREE.SphereGeometry(0.18, 16, 12), glove, [side * 0.93, 0.05, -0.24]);
-    hand.scale.set(1.2, 0.72, 1.4);
-    group.add(hand);
-
-    const mirrorArm = mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 8), metal, [
-      side * 0.77,
-      0.43,
-      -0.66,
-    ]);
-    mirrorArm.rotation.z = side * -0.35;
-    group.add(mirrorArm);
-    const mirror = mesh(new THREE.SphereGeometry(0.19, 18, 10), metal, [side * 0.9, 0.7, -0.65]);
-    mirror.scale.set(1.45, 0.68, 0.18);
-    group.add(mirror);
-  }
-
-  const { canvas, texture } = createGaugeTexture();
-  const gaugeMaterial = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
-  const gauge = mesh(new THREE.CircleGeometry(0.42, 48), gaugeMaterial, [0, 0.2, -0.52], false);
-  group.add(gauge);
-
-  const wheel = mesh(
-    new THREE.TorusGeometry(0.42, 0.08, 12, 30),
-    mat(0x090b0c, 0.78, 0.05),
-    [0, -0.75, -1.75],
-  );
-  wheel.rotation.y = Math.PI / 2;
-  group.add(wheel);
-
-  const headlight = new THREE.SpotLight(0xbfeeff, 42, 115, Math.PI / 7, 0.45, 1.3);
-  headlight.position.set(0, 0.05, -1.2);
-  headlight.target.position.set(0, -1, -80);
-  group.add(headlight, headlight.target);
-
-  return { group, canvas, texture };
-}
-
-function createBike(color: number, accent: number) {
-  const bike = new THREE.Group();
-  const bodyMat = mat(color, 0.24, 0.62, color);
-  const dark = mat(0x090d10, 0.5, 0.5);
-  const rider = mat(0x151b20, 0.52, 0.22);
-  const accentMat = mat(accent, 0.22, 0.48, accent);
-
-  for (const z of [-0.85, 0.95]) {
-    const wheel = mesh(new THREE.TorusGeometry(0.42, 0.095, 10, 24), dark, [0, 0.42, z]);
-    wheel.rotation.y = Math.PI / 2;
-    bike.add(wheel);
-  }
-  const chassis = mesh(new THREE.BoxGeometry(0.48, 0.32, 1.8), bodyMat, [0, 0.64, 0]);
-  chassis.rotation.x = -0.08;
-  bike.add(chassis);
-  const tank = mesh(new THREE.SphereGeometry(0.42, 18, 12), bodyMat, [0, 0.96, -0.12]);
-  tank.scale.set(0.88, 0.75, 1.25);
-  bike.add(tank);
-  const tail = mesh(new THREE.BoxGeometry(0.42, 0.22, 0.68), accentMat, [0, 0.9, 0.78]);
-  tail.rotation.x = -0.22;
-  bike.add(tail);
-  const torso = mesh(new THREE.CapsuleGeometry(0.25, 0.7, 5, 10), rider, [0, 1.46, 0.18]);
-  torso.rotation.x = Math.PI / 2.8;
-  bike.add(torso);
-  const helmet = mesh(new THREE.SphereGeometry(0.27, 18, 12), accentMat, [0, 1.62, -0.28]);
-  bike.add(helmet);
-  const visor = mesh(
-    new THREE.SphereGeometry(0.275, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-    mat(0x071015, 0.08, 0.8),
-    [0, 1.61, -0.31],
-  );
-  visor.rotation.x = Math.PI / 2;
-  visor.scale.set(1.01, 1.01, 1.01);
-  bike.add(visor);
-  const tailLight = mesh(
-    new THREE.BoxGeometry(0.28, 0.09, 0.06),
-    mat(0xff2d34, 0.2, 0.2, 0xff0000),
-    [0, 0.92, 1.14],
-    false,
-  );
-  bike.add(tailLight);
-  return bike;
-}
-
-function createTrafficVehicle(index: number) {
-  const colors = [0x23303a, 0xd3d6d2, 0x6f151d, 0x172736, 0x6d7066, 0xb06b24];
-  const color = colors[index % colors.length];
-  const vehicle = new THREE.Group();
-  const bodyMat = mat(color, 0.36, 0.55);
-  const glass = mat(0x07151d, 0.08, 0.72);
-  const tire = mat(0x07090a, 0.82, 0.04);
-  const length = index % 4 === 0 ? 5.9 : 4.45;
-  const height = index % 4 === 0 ? 2.15 : 1.35;
-
-  vehicle.add(mesh(new THREE.BoxGeometry(2.05, 0.52, length), bodyMat, [0, 0.52, 0]));
-  const cabin = mesh(new THREE.BoxGeometry(1.76, height * 0.58, length * 0.48), glass, [
-    0,
-    0.95 + height * 0.16,
-    -0.25,
-  ]);
-  cabin.scale.x = 0.93;
-  vehicle.add(cabin);
-  for (const x of [-0.92, 0.92]) {
-    for (const z of [-length * 0.31, length * 0.31]) {
-      const wheel = mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 12), tire, [x, 0.34, z]);
-      wheel.rotation.z = Math.PI / 2;
-      vehicle.add(wheel);
-    }
-  }
-  for (const x of [-0.62, 0.62]) {
-    vehicle.add(
-      mesh(
-        new THREE.BoxGeometry(0.33, 0.15, 0.06),
-        mat(0xff281e, 0.2, 0.2, 0xff0000),
-        [x, 0.58, length / 2 + 0.03],
-        false,
-      ),
-    );
-  }
-  return vehicle;
-}
-
-function createRoadSegment(index: number) {
+function createRoadSegment(index: number, asphalt: THREE.MeshStandardMaterial) {
   const group = new THREE.Group();
   group.position.z = 35 - index * 72;
 
-  const road = mesh(
-    new THREE.BoxGeometry(15.2, 0.22, 72),
-    mat(0x11191c, 0.18, 0.42),
-    [0, -0.18, 0],
-    false,
-  );
+  const road = mesh(new THREE.BoxGeometry(15.2, 0.22, 72), asphalt, [0, -0.11, 0], false);
   group.add(road);
 
-  const shoulder = mat(0x384043, 0.4, 0.38);
+  const shoulder = mat(0x757a7b, 0.92, 0);
   group.add(mesh(new THREE.BoxGeometry(1.0, 0.25, 72), shoulder, [-8.08, -0.17, 0], false));
   group.add(mesh(new THREE.BoxGeometry(1.0, 0.25, 72), shoulder, [8.08, -0.17, 0], false));
+  group.add(
+    mesh(new THREE.BoxGeometry(0.72, 1.18, 72), mat(0x657178, 0.58, 0.2), [-8.62, 0.38, 0]),
+  );
+  group.add(mesh(new THREE.BoxGeometry(0.82, 2.5, 72), mat(0x41494b, 0.82, 0.08), [8.66, 1.03, 0]));
 
   const paint = new THREE.MeshStandardMaterial({
-    color: 0xd6dcce,
-    roughness: 0.32,
-    metalness: 0.1,
+    color: 0xe0e2d8,
+    roughness: 0.8,
+    metalness: 0,
   });
   for (const x of [-3.1, 0, 3.1]) {
     for (let z = -30; z <= 30; z += 12) {
-      group.add(mesh(new THREE.BoxGeometry(0.12, 0.025, 5.4), paint, [x, -0.025, z], false));
+      group.add(mesh(new THREE.BoxGeometry(0.12, 0.003, 5.4), paint, [x, 0.002, z], false));
     }
   }
 
@@ -369,26 +124,6 @@ function createRoadSegment(index: number) {
     for (let z = -30; z < 34; z += 8) {
       group.add(mesh(new THREE.BoxGeometry(0.12, 0.84, 0.12), railMat, [x, 0.2, z], false));
     }
-  }
-
-  const puddleMat = new THREE.MeshPhysicalMaterial({
-    color: 0x07141b,
-    roughness: 0.06,
-    metalness: 0.35,
-    transparent: true,
-    opacity: 0.48,
-    depthWrite: false,
-  });
-  for (let p = 0; p < 5; p += 1) {
-    const puddle = mesh(
-      new THREE.CircleGeometry(0.7 + (p % 3) * 0.35, 18),
-      puddleMat,
-      [-5.5 + ((index * 3 + p * 5) % 11), -0.035, -28 + p * 13],
-      false,
-    );
-    puddle.rotation.x = -Math.PI / 2;
-    puddle.scale.x = 2.3;
-    group.add(puddle);
   }
 
   if (index % 2 === 0) {
@@ -427,58 +162,17 @@ function createTunnelSegment(index: number) {
   const group = new THREE.Group();
   group.position.z = 30 - index * 22;
   const concrete = mat(0x242c2d, 0.72, 0.16);
-  const wet = mat(0x0b1518, 0.15, 0.4);
+  const tunnelAsphalt = mat(0x343b3e, 0.96, 0);
   const light = mat(0xffa94f, 0.2, 0.2, 0xff861f);
   group.add(mesh(new THREE.BoxGeometry(1.2, 6.7, 21), concrete, [-8.5, 3.15, 0]));
   group.add(mesh(new THREE.BoxGeometry(1.2, 6.7, 21), concrete, [8.5, 3.15, 0]));
   group.add(mesh(new THREE.BoxGeometry(18.2, 0.7, 21), concrete, [0, 6.35, 0]));
-  group.add(mesh(new THREE.BoxGeometry(15.3, 0.03, 21), wet, [0, -0.02, 0], false));
+  group.add(mesh(new THREE.BoxGeometry(15.3, 0.03, 21), tunnelAsphalt, [0, -0.02, 0], false));
   if (index % 2 === 0) {
     group.add(mesh(new THREE.BoxGeometry(5.8, 0.12, 0.28), light, [-4.2, 5.92, -6], false));
     group.add(mesh(new THREE.BoxGeometry(5.8, 0.12, 0.28), light, [4.2, 5.92, -6], false));
   }
   return group;
-}
-
-function createRain(count: number) {
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i += 1) {
-    positions[i * 3] = (Math.random() - 0.5) * 38;
-    positions[i * 3 + 1] = Math.random() * 18;
-    positions[i * 3 + 2] = -Math.random() * 125 + 15;
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const material = new THREE.PointsMaterial({
-    color: 0xb9e7ee,
-    size: 0.075,
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false,
-    sizeAttenuation: true,
-  });
-  return new THREE.Points(geometry, material);
-}
-
-function createSpray(count: number) {
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i += 1) {
-    positions[i * 3] = (Math.random() - 0.5) * 2.8;
-    positions[i * 3 + 1] = Math.random() * 1.5;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 7;
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  return new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      color: 0xd4f4f4,
-      size: 0.16,
-      transparent: true,
-      opacity: 0.23,
-      depthWrite: false,
-    }),
-  );
 }
 
 function createEngineAudio() {
@@ -534,14 +228,65 @@ function createEngineAudio() {
   return { ensure, update, dispose };
 }
 
-export function GameCanvas({
+export function GameCanvas(props: GameCanvasProps) {
+  const [template, setTemplate] = useState(getLoadedMotorcycleTemplate);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const { onAssetsReady } = props;
+  useEffect(() => {
+    let active = true;
+    onAssetsReady(Boolean(getLoadedMotorcycleTemplate()));
+    setFailed(false);
+    void loadMotorcycleTemplate().then(
+      (model) => {
+        if (!active) return;
+        setTemplate(model);
+        onAssetsReady(true);
+      },
+      (error: unknown) => {
+        if (!active) return;
+        console.error("No se pudo cargar la Suzuki", error);
+        setFailed(true);
+        onAssetsReady(false);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [attempt, onAssetsReady]);
+
+  if (template) return <GameScene {...props} template={template} />;
+  return (
+    <div className="model-loading" role={failed ? "alert" : "status"}>
+      <span className="model-loading-label">ASPHALT RIVALS / GARAJE</span>
+      <h2>{failed ? "No se pudo cargar la Suzuki" : "Preparando tu Suzuki"}</h2>
+      <p>
+        {failed
+          ? "Comprueba la conexión y vuelve a intentarlo."
+          : "Cargando el modelo 3D, los materiales y las ruedas…"}
+      </p>
+      {failed && (
+        <button
+          className="primary-action"
+          type="button"
+          onClick={() => setAttempt((value) => value + 1)}
+        >
+          REINTENTAR
+        </button>
+      )}
+    </div>
+  );
+}
+
+function GameScene({
   phase,
   touchInput,
   reducedMotion,
   soundEnabled,
   network,
   onTelemetry,
-}: GameCanvasProps) {
+  template,
+}: GameCanvasProps & { template: THREE.Group }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const phaseRef = useRef(phase);
   const touchRef = useRef(touchInput);
@@ -577,23 +322,50 @@ export function GameCanvas({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0c1820, 0.0115);
-    scene.add(createSky(), createSun());
+    scene.fog = new THREE.FogExp2(0xb4bec4, 0.0032);
+    const sky = createOvercastSky();
+    scene.add(sky);
+    // The same cloud dome lights the models; no distorted 2D environment map.
+    const environmentScene = new THREE.Scene();
+    environmentScene.add(sky.clone());
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const environmentTarget = pmrem.fromScene(environmentScene, 0.15, 0.1, 1000);
+    scene.environment = environmentTarget.texture;
+    scene.environmentIntensity = 0.7;
+    pmrem.dispose();
+    environmentScene.clear();
 
     const camera = new THREE.PerspectiveCamera(72, host.clientWidth / host.clientHeight, 0.05, 900);
     camera.position.set(0, 1.55, 6.5);
     scene.add(camera);
 
-    scene.add(new THREE.HemisphereLight(0x577b91, 0x121719, 1.25));
-    const sunLight = new THREE.DirectionalLight(0xffaa82, 3.6);
+    const composer = new EffectComposer(renderer);
+    composer.setSize(host.clientWidth, host.clientHeight);
+    composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65));
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(
+      new THREE.Vector2(host.clientWidth, host.clientHeight),
+      0.15,
+      0.35,
+      1.15,
+    );
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+
+    const skylight = new THREE.HemisphereLight(0xd5dde3, 0x5a605d, 2.2);
+    scene.add(skylight);
+    const sunLight = new THREE.DirectionalLight(0xe3e7e9, 1.4);
     sunLight.position.set(-34, 48, 15);
     sunLight.castShadow = true;
+    sunLight.shadow.radius = 4;
+    sunLight.shadow.normalBias = 0.035;
+    sunLight.shadow.bias = -0.00015;
     sunLight.shadow.mapSize.set(2048, 2048);
     sunLight.shadow.camera.left = -28;
     sunLight.shadow.camera.right = 28;
@@ -602,10 +374,12 @@ export function GameCanvas({
     sunLight.shadow.camera.far = 140;
     scene.add(sunLight);
 
-    const fill = new THREE.DirectionalLight(0x4bcce5, 0.75);
+    const fill = new THREE.DirectionalLight(0xd0dce4, 0.55);
     fill.position.set(18, 12, -30);
     scene.add(fill);
 
+    const ambient = new THREE.AmbientLight(0xc1c9cd, 0.2);
+    scene.add(ambient);
     const water = mesh(
       new THREE.PlaneGeometry(580, 1250, 1, 1),
       new THREE.MeshPhysicalMaterial({
@@ -620,7 +394,10 @@ export function GameCanvas({
     water.rotation.x = -Math.PI / 2;
     scene.add(water);
 
-    const roadSegments = Array.from({ length: 16 }, (_, index) => createRoadSegment(index));
+    const asphalt = createDryAsphaltMaterial(renderer.capabilities.getMaxAnisotropy());
+    const roadSegments = Array.from({ length: 16 }, (_, index) =>
+      createRoadSegment(index, asphalt),
+    );
     roadSegments.forEach((segment) => scene.add(segment));
 
     const tunnel = new THREE.Group();
@@ -635,28 +412,23 @@ export function GameCanvas({
     tunnelLightB.position.set(4, 5.2, -88);
     tunnel.add(tunnelLightA, tunnelLightB);
 
-    const cockpit = createCockpit();
-    camera.add(cockpit.group);
-
-    const rival = createBike(0xc93c38, 0xff7868);
-    rival.position.set(-1.55, 0, -28);
-    rival.scale.setScalar(1.08);
-    scene.add(rival);
-    const rivalSpray = createSpray(100);
-    rivalSpray.position.set(0, 0.1, 1.2);
-    rival.add(rivalSpray);
+    const playerMotorcycle = createMotorcycle(0xb82636, 0xe55660, template);
+    const rivalMotorcycle = createMotorcycle(0x2467a8, 0x7cbeef, template);
+    const playerBike = playerMotorcycle.group;
+    const playerRider = playerBike.getObjectByName("rider");
+    const rival = rivalMotorcycle.group;
+    playerBike.position.set(0, 0, SAME_STATION_Z);
+    rival.position.set(1.55, 0, -28);
+    scene.add(playerBike, rival);
 
     const TRAFFIC_POOL = 28;
     let trafficSeed = 42;
     let trafficField: TrafficVehicleState[] = generateTraffic(trafficSeed);
-    const traffic: TrafficVehicle[] = Array.from({ length: TRAFFIC_POOL }, (_, index) => {
-      const group = createTrafficVehicle(index);
+    const traffic: TrafficVehicle[] = Array.from({ length: TRAFFIC_POOL }, () => {
+      const group = new THREE.Group();
       group.visible = false;
       scene.add(group);
-      const spray = createSpray(45);
-      spray.position.set(0, 0.08, 2.1);
-      group.add(spray);
-      return { group };
+      return { group, trafficId: null, models: new Map() };
     });
 
     const rebuildTraffic = (seed: number) => {
@@ -664,18 +436,27 @@ export function GameCanvas({
       if (next === trafficSeed && trafficField.length > 0) return;
       trafficSeed = next;
       trafficField = generateTraffic(trafficSeed);
+      traffic.forEach((slot) => {
+        slot.trafficId = null;
+        slot.group.visible = false;
+      });
     };
-
-    const rain = createRain(1300);
-    scene.add(rain);
 
     const keys = new Set<string>();
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      )
+        return;
       keys.add(event.code);
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code))
         event.preventDefault();
     };
     const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
+    const clearKeys = () => keys.clear();
+    window.addEventListener("blur", clearKeys);
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
 
@@ -698,6 +479,9 @@ export function GameCanvas({
       elapsed: number;
     } | null = null;
     let playerX = 0;
+    let steering = 0;
+    let previewDistance = 0;
+    let previewElapsed = 0;
     let elapsed = 0;
     let replayTime = 0;
     let nearMisses = 0;
@@ -749,9 +533,8 @@ export function GameCanvas({
 
     const applyQuality = () => {
       const ratios = [0.85, 1.2, 1.65];
-      const rainCounts = [420, 850, 1300];
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, ratios[qualityIndex]));
-      rain.geometry.setDrawRange(0, rainCounts[qualityIndex]);
+      composer.setPixelRatio(Math.min(window.devicePixelRatio, ratios[qualityIndex]));
       sunLight.shadow.mapSize.set(
         qualityIndex === 2 ? 2048 : 1024,
         qualityIndex === 2 ? 2048 : 1024,
@@ -770,12 +553,14 @@ export function GameCanvas({
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      composer.setSize(width, height);
     };
     window.addEventListener("resize", onResize);
 
     const animate = () => {
       animationFrame = window.requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.05);
+      const frameDelta = clock.getDelta();
+      const dt = Math.min(frameDelta, 0.05);
       const activePhase = phaseRef.current;
       const isRace = activePhase === "race";
       const isReplay = activePhase === "replay";
@@ -790,7 +575,11 @@ export function GameCanvas({
       const keyboardSteer =
         (keys.has("KeyA") || keys.has("ArrowLeft") ? -1 : 0) +
         (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0);
-      const steer = THREE.MathUtils.clamp(keyboardSteer || touchRef.current.steer, -1, 1);
+      const targetSteer = isRace
+        ? THREE.MathUtils.clamp(keyboardSteer || touchRef.current.steer, -1, 1)
+        : 0;
+      steering = THREE.MathUtils.lerp(steering, targetSteer, 1 - Math.exp(-dt * 10));
+      const steer = steering;
       const throttlePressed = keys.has("KeyW") || keys.has("ArrowUp") || touchRef.current.throttle;
       const brakePressed = keys.has("KeyS") || keys.has("ArrowDown") || touchRef.current.brake;
 
@@ -822,19 +611,21 @@ export function GameCanvas({
           const acceleration = drive * (34 - speed * 0.063) - drag - (brakePressed ? 52 : 0);
           speed = THREE.MathUtils.clamp(speed + acceleration * dt, 0, 298);
           playerX = THREE.MathUtils.clamp(
-            playerX + steer * (3.4 + speed * 0.009) * dt,
+            playerX + steer * Math.min(1, speed / 24) * (3.4 + speed * 0.009) * dt,
             -5.55,
             5.55,
           );
           distance = Math.min(5000, distance + (speed / 3.6) * dt);
           elapsed += dt;
           if (network.status === "demo-local") {
-            rivalSpeed = THREE.MathUtils.clamp(
-              212 +
-                Math.sin(elapsed * 0.31) * 28 +
-                Math.sin(elapsed * 0.93) * 12 +
-                (distance > rivalDistance ? 8 : -4),
+            const targetSpeed = THREE.MathUtils.clamp(
+              212 + Math.sin(elapsed * 0.31) * 18 + (distance > rivalDistance ? 8 : -4),
               178,
+              254,
+            );
+            rivalSpeed = THREE.MathUtils.clamp(
+              rivalSpeed + Math.min(targetSpeed - rivalSpeed, 32 - rivalSpeed * 0.06) * dt,
+              0,
               284,
             );
             rivalDistance = Math.min(5000, rivalDistance + (rivalSpeed / 3.6) * dt);
@@ -857,6 +648,10 @@ export function GameCanvas({
       rpm = THREE.MathUtils.lerp(rpm, gearFloor + ((speed % 52) / 52) * 5600, dt * 7.5);
       const worldSpeed = isPaused ? 0 : isLobby ? 21 : isReplay ? speed / 3.6 : speed / 3.6;
 
+      if (isLobby || isReplay) {
+        previewDistance += worldSpeed * dt;
+        previewElapsed += dt;
+      }
       const totalRoadLength = roadSegments.length * 72;
       for (const segment of roadSegments) {
         segment.position.z += worldSpeed * dt;
@@ -867,11 +662,34 @@ export function GameCanvas({
         (isRace && distance > 2180 && distance < 3140) ||
         (isReplay && replayTime > 8 && replayTime < 15);
       tunnel.visible = inTunnel;
-      scene.fog!.color.setHex(inTunnel ? 0x080c0d : 0x0c1820);
-      (scene.fog as THREE.FogExp2).density = inTunnel ? 0.018 : 0.0115;
+      scene.fog!.color.setHex(inTunnel ? 0x252c30 : 0xb4bec4);
+      (scene.fog as THREE.FogExp2).density = inTunnel ? 0.012 : 0.0032;
+      sky.visible = !inTunnel;
+      const lightFollow = 1 - Math.exp(-dt * 3);
+      skylight.intensity = THREE.MathUtils.lerp(
+        skylight.intensity,
+        inTunnel ? 0.2 : 2.2,
+        lightFollow,
+      );
+      sunLight.intensity = THREE.MathUtils.lerp(
+        sunLight.intensity,
+        inTunnel ? 0 : 1.4,
+        lightFollow,
+      );
+      fill.intensity = THREE.MathUtils.lerp(fill.intensity, inTunnel ? 0.08 : 0.55, lightFollow);
+      ambient.intensity = THREE.MathUtils.lerp(
+        ambient.intensity,
+        inTunnel ? 0.06 : 0.2,
+        lightFollow,
+      );
+      scene.environmentIntensity = THREE.MathUtils.lerp(
+        scene.environmentIntensity,
+        inTunnel ? 0.09 : 0.7,
+        lightFollow,
+      );
       renderer.toneMappingExposure = THREE.MathUtils.lerp(
         renderer.toneMappingExposure,
-        inTunnel ? 0.78 : 1.12,
+        inTunnel ? 1.15 : 1.05,
         dt * 2.2,
       );
       if (inTunnel) {
@@ -881,8 +699,9 @@ export function GameCanvas({
         }
       }
 
-      const raceElapsed = isRace || isReplay ? elapsed : 0;
-      if (isRace && !isPaused) {
+      const raceElapsed = isLobby || isReplay ? previewElapsed : elapsed;
+      const viewDistance = isLobby || isReplay ? previewDistance : distance;
+      if (isRace && !isPaused && network.status !== "conectado") {
         riderBody.speed = speed / 3.6;
         riderBody.lateralPosition = playerX;
         riderBody.distance = distance;
@@ -901,74 +720,86 @@ export function GameCanvas({
       }
 
       const rivalGap = distance - rivalDistance;
-      const gapAhead = rivalDistance - distance;
+      const gapAhead =
+        isLobby || isReplay ? 22 + Math.sin(previewElapsed * 0.4) * 3 : rivalDistance - distance;
       const rivalLane = networkRivalLane ?? 1.55;
-      rival.position.x = THREE.MathUtils.lerp(rival.position.x, rivalLane, dt * 6.5);
+      const rivalDeltaX = rivalLane - rival.position.x;
+      rival.position.x = THREE.MathUtils.lerp(rival.position.x, rivalLane, 1 - Math.exp(-dt * 6.5));
       rival.position.z = worldZFromGap(gapAhead);
       rival.visible = gapAhead > -VIEW_BEHIND_METERS && gapAhead < VIEW_AHEAD_METERS;
-      rival.rotation.z = Math.sin(elapsed * 0.55 + 1.1) * -0.13;
-      rival.position.y = Math.sin(elapsed * 8.5) * 0.018;
-
-      const nearbyTraffic: { rel: number; laneIndex: number; id: string }[] = [];
-      for (const car of trafficField) {
-        const rel = car.distance + car.speed * raceElapsed - distance;
-        if (rel <= -VIEW_BEHIND_METERS || rel >= VIEW_AHEAD_METERS) continue;
-        nearbyTraffic.push({ rel, laneIndex: car.laneIndex, id: car.id });
-      }
-      nearbyTraffic.sort(
-        (left, right) =>
-          Math.abs(left.rel) - Math.abs(right.rel) || left.id.localeCompare(right.id),
+      rival.rotation.z = THREE.MathUtils.lerp(
+        rival.rotation.z,
+        THREE.MathUtils.clamp(-rivalDeltaX * 0.08, -0.22, 0.22),
+        1 - Math.exp(-dt * 7),
+      );
+      rival.position.y = 0;
+      animateVehicleWheels(
+        rival,
+        isPaused ? 0 : isLobby || isReplay ? worldSpeed : rivalSpeed / 3.6,
+        dt,
       );
 
-      traffic.forEach((vehicle, index) => {
-        const item = nearbyTraffic[index];
-        if (!item) {
-          vehicle.group.visible = false;
-          return;
+      const nearbyTraffic = trafficField
+        .map((car) => ({ car, rel: car.distance + car.speed * raceElapsed - viewDistance }))
+        .filter(({ rel }) => rel > -VIEW_BEHIND_METERS && rel < VIEW_AHEAD_METERS)
+        .sort((left, right) => Math.abs(left.rel) - Math.abs(right.rel))
+        .slice(0, TRAFFIC_POOL);
+      const visibleIds = new Set(nearbyTraffic.map(({ car }) => car.id));
+      for (const slot of traffic) {
+        if (slot.trafficId && !visibleIds.has(slot.trafficId)) slot.trafficId = null;
+        slot.group.visible = false;
+      }
+      for (const { car, rel } of nearbyTraffic) {
+        const slot =
+          traffic.find((candidate) => candidate.trafficId === car.id) ??
+          traffic.find((candidate) => candidate.trafficId === null);
+        if (!slot) continue;
+        slot.trafficId = car.id;
+        let model = slot.models.get(car.kind);
+        if (!model) {
+          model = createTrafficVehicle(traffic.indexOf(slot), car.kind);
+          slot.models.set(car.kind, model);
+          slot.group.add(model);
         }
-        vehicle.group.visible = true;
-        vehicle.group.position.x = lanes[item.laneIndex] ?? 0;
-        vehicle.group.position.z = worldZFromGap(item.rel);
-      });
-
-      const rainPositions = rain.geometry.getAttribute("position") as THREE.BufferAttribute;
-      for (let index = 0; index < rainPositions.count; index += 1) {
-        let y = rainPositions.getY(index) - dt * (24 + speed * 0.035);
-        let z = rainPositions.getZ(index) + dt * worldSpeed * 0.52;
-        if (y < -0.2) y = 12 + Math.random() * 8;
-        if (z > 18) z = -105 - Math.random() * 30;
-        rainPositions.setY(index, y);
-        rainPositions.setZ(index, z);
+        for (const variant of slot.models.values()) variant.visible = variant === model;
+        // Body dimensions follow simulation; projecting mirrors are cosmetic, not extra collision width.
+        model.scale.x = car.width / Number(model.userData.baseWidth);
+        model.scale.z = car.length / Number(model.userData.baseLength);
+        slot.group.visible = true;
+        slot.group.position.set(lanes[car.laneIndex] ?? 0, 0, worldZFromGap(rel));
+        animateVehicleWheels(model, isPaused ? 0 : car.speed, dt);
       }
-      rainPositions.needsUpdate = true;
-      rain.position.x = camera.position.x;
 
-      const lean = steer * THREE.MathUtils.clamp(speed / 260, 0.08, 1) * -0.34;
-      cockpit.group.rotation.z = THREE.MathUtils.lerp(cockpit.group.rotation.z, lean, dt * 7.5);
-      cockpit.group.rotation.x = THREE.MathUtils.lerp(
-        cockpit.group.rotation.x,
-        brakePressed ? -0.075 : throttlePressed ? 0.025 : 0,
-        dt * 4,
+      const lean = steer * THREE.MathUtils.clamp(speed / 260, 0, 1) * -0.3;
+      playerBike.position.set(playerX, 0, SAME_STATION_Z);
+      playerBike.rotation.z = THREE.MathUtils.lerp(
+        playerBike.rotation.z,
+        lean,
+        1 - Math.exp(-dt * 7.5),
       );
-      cockpit.group.position.y =
-        -0.8 + Math.sin(elapsed * (5 + rpm / 1700)) * (reducedMotionRef.current ? 0.002 : 0.009);
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, playerX, dt * 5.5);
+      // Both views use the same full motorcycle. Hide only the local rider's body
+      // so the first-person camera is not occluded by its own helmet/torso.
+      if (playerRider) playerRider.visible = isReplay;
+      animateVehicleWheels(playerBike, worldSpeed, dt);
 
       if (isReplay) {
         const orbit = replayTime * 0.22;
         camera.position.x = playerX + Math.sin(orbit) * 8.5;
         camera.position.y = 3.0 + Math.sin(replayTime * 0.31) * 1.1;
         camera.position.z = 10 + Math.cos(orbit) * 7.5;
-        camera.lookAt(playerX, 0.8, -15);
-        cockpit.group.visible = false;
+        camera.lookAt(playerX, 0.8, SAME_STATION_Z);
       } else {
-        cockpit.group.visible = true;
-        camera.position.y = 1.55;
-        camera.position.z = 6.5;
+        camera.position.x = playerX;
+        camera.position.y =
+          1.38 +
+          (reducedMotionRef.current || isPaused
+            ? 0
+            : Math.sin(elapsed * 13) * Math.min(0.0025, speed * 0.000015));
+        camera.position.z = SAME_STATION_Z + 0.43;
         camera.rotation.order = "YXZ";
-        camera.rotation.x = -0.015 + (brakePressed ? -0.018 : 0);
-        camera.rotation.y = steer * -0.018;
-        camera.rotation.z = reducedMotionRef.current ? lean * 0.12 : lean * 0.32;
+        camera.rotation.x = -0.055 + (brakePressed ? -0.018 : 0);
+        camera.rotation.y = steer * -0.012;
+        camera.rotation.z = reducedMotionRef.current ? lean * 0.12 : lean * 0.28;
       }
 
       camera.fov = THREE.MathUtils.lerp(
@@ -977,8 +808,17 @@ export function GameCanvas({
         dt * 2.3,
       );
       camera.updateProjectionMatrix();
-      drawGauge(cockpit.canvas, speed, rpm);
-      cockpit.texture.needsUpdate = true;
+      drawGauge(playerMotorcycle.canvas, speed, rpm, gear);
+      playerMotorcycle.texture.needsUpdate = true;
+      // The opponent has the identical instrument, driven by its own telemetry.
+      const rivalDisplaySpeed = isLobby || isReplay ? worldSpeed * 3.6 : rivalSpeed;
+      drawGauge(
+        rivalMotorcycle.canvas,
+        rivalDisplaySpeed,
+        4000 + rivalDisplaySpeed * 16,
+        Math.max(1, Math.min(6, Math.ceil(rivalDisplaySpeed / 48))),
+      );
+      rivalMotorcycle.texture.needsUpdate = true;
       audio.update(rpm, speed, soundRef.current && (isRace || isReplay));
 
       eventTimer -= dt;
@@ -1004,7 +844,7 @@ export function GameCanvas({
         });
       }
 
-      frameAccumulator += dt;
+      frameAccumulator += frameDelta;
       frameCount += 1;
       qualityTimer += dt;
       if (qualityTimer >= 2.2) {
@@ -1028,7 +868,7 @@ export function GameCanvas({
         qualityTimer = 0;
       }
 
-      renderer.render(scene, camera);
+      composer.render();
     };
 
     applyQuality();
@@ -1039,26 +879,41 @@ export function GameCanvas({
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", clearKeys);
       window.removeEventListener("pointerdown", enableAudio);
       window.removeEventListener("keydown", enableAudio);
       audio.dispose();
       unsubscribeRival();
       unsubscribeSimulation?.();
       unsubscribeState?.();
+      const disposedGeometries = new Set<THREE.BufferGeometry>();
+      const disposedMaterials = new Set<THREE.Material>();
+      const disposedTextures = new Set<THREE.Texture>();
       scene.traverse((object) => {
-        if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
-        object.geometry.dispose();
+        if (!(object instanceof THREE.Mesh)) return;
+        if (!disposedGeometries.has(object.geometry)) {
+          object.geometry.dispose();
+          disposedGeometries.add(object.geometry);
+        }
         const materials = Array.isArray(object.material) ? object.material : [object.material];
-        materials.forEach((material) => {
-          const map = "map" in material ? (material as THREE.MeshBasicMaterial).map : null;
-          map?.dispose();
+        for (const material of materials) {
+          if (disposedMaterials.has(material)) continue;
+          for (const value of Object.values(material)) {
+            if (value instanceof THREE.Texture && !disposedTextures.has(value)) {
+              value.dispose();
+              disposedTextures.add(value);
+            }
+          }
           material.dispose();
-        });
+          disposedMaterials.add(material);
+        }
       });
+      composer.dispose();
+      environmentTarget.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [network]);
+  }, [network, template]);
 
   return <div className="game-canvas" ref={hostRef} aria-hidden="true" />;
 }

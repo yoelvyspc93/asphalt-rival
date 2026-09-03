@@ -78,6 +78,15 @@ describe("canonical constants and input boundary", () => {
 });
 
 describe("seeded traffic", () => {
+  it("uses only the sedan and van types in the initial roster", () => {
+    const traffic = [8, 42, 734].flatMap((seed) => generateTraffic(seed));
+    expect([...new Set(traffic.map((vehicle) => vehicle.kind))].sort()).toEqual(["car", "van"]);
+    for (const vehicle of traffic) {
+      expect(vehicle.width).toBe(vehicle.kind === "car" ? 1.85 : 2.05);
+      expect(vehicle.length).toBe(vehicle.kind === "car" ? 4.4 : 5.2);
+    }
+  });
+
   it("is identical for the same seed and changes for a different seed", () => {
     expect(generateTraffic(734)).toEqual(generateTraffic(734));
     expect(generateTraffic(734)).not.toEqual(generateTraffic(735));

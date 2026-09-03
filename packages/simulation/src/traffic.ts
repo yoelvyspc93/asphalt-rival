@@ -30,7 +30,8 @@ export function generateTraffic(
     for (let index = 0; index < targetPerLane; index += 1) {
       const progress = 120 + nominalGap * (index + random.between(0.15, 0.85));
       const kindRoll = random.next();
-      const kind: TrafficKind = kindRoll < 0.7 ? "car" : kindRoll < 0.9 ? "van" : "truck";
+      // Initial roster: one sedan and one van, with cosmetic colour variants in the renderer.
+      const kind: TrafficKind = kindRoll < 0.7 ? "car" : "van";
       const dimensions = TRAFFIC_DIMENSIONS[kind];
 
       traffic.push({
@@ -39,7 +40,7 @@ export function generateTraffic(
         laneIndex,
         lateralPosition: LANE_CENTERS_METERS[laneIndex]!,
         distance: Math.min(progress, TRACK_LENGTH_METERS - 15),
-        speed: random.between(kind === "truck" ? 18 : 22, kind === "car" ? 38 : 32),
+        speed: random.between(22, kind === "car" ? 38 : 32),
         width: dimensions.width,
         length: dimensions.length,
       });

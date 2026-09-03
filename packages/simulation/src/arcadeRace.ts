@@ -24,8 +24,9 @@ const BRAKING = 34;
 const DRAG = 0.34;
 const STEERING_SPEED = 5.2;
 const TRAFFIC_HIT_SPEED_CAP = 8;
-const LATERAL_FORGIVENESS = 0.55;
-const LONGITUDINAL_FORGIVENESS = 5.6;
+// Small contact tolerance only; a following-distance buffer is not a collision.
+const LATERAL_FORGIVENESS = 0.03;
+const LONGITUDINAL_FORGIVENESS = 0.08;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
